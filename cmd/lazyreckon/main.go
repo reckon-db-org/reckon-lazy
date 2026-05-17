@@ -23,7 +23,9 @@ import (
 	"codeberg.org/reckon-db-org/reckon-go/streams"
 	"codeberg.org/reckon-db-org/reckon-lazy/internal/editor"
 	"codeberg.org/reckon-db-org/reckon-lazy/internal/modes"
+	"codeberg.org/reckon-db-org/reckon-lazy/internal/profiles"
 	"codeberg.org/reckon-db-org/reckon-lazy/internal/ranger"
+	"codeberg.org/reckon-db-org/reckon-lazy/internal/splash"
 	"codeberg.org/reckon-db-org/reckon-lazy/internal/ui"
 )
 
@@ -346,21 +348,113 @@ func (m *model) shutdown() {
 }
 
 func main() {
-	endpoint := flag.String("endpoint", "localhost:50051",
-		"reckon-gateway gRPC endpoint (host:port)")
+	endpointFlag := flag.String("endpoint", "",
+		"reckon-gateway gRPC endpoint (host:port) — skips the splash")
+	profileFlag := flag.String("profile", "",
+		"saved profile name from profiles.toml — skips the splash")
+	saveAs := flag.String("save-as", "",
+		"save --endpoint as a new profile under this name (also connects)")
 	flag.Parse()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	c, err := reckon.Connect(ctx, *endpoint)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "lazyreckon: connect %s: %v\n", *endpoint, err)
-		os.Exit(1)
-	}
-
-	p := tea.NewProgram(initialModel(*endpoint, c), tea.WithAltScreen())
-	if _, err := p.Run(); err != nil {
+	if err := run(*endpointFlag, *profileFlag, *saveAs); err != nil {
 		fmt.Fprintf(os.Stderr, "lazyreckon: %v\n", err)
 		os.Exit(1)
 	}
+}
+
+func run(endpointFlag, profileFlag, saveAs string) error {
+	store, err := loadProfiles()
+	if err != nil {
+		return fmt.Errorf("load profiles: %w", err)
+	}
+
+	endpoint, profileName, err := resolveEndpoint(store, endpointFlag, profileFlag, saveAs)
+	if err != nil {
+		return err
+	}
+	if endpoint == "" {
+		// User cancelled the splash. Exit cleanly.
+		return nil
+	}
+
+	dialCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	c, err := reckon.Connect(dialCtx, endpoint)
+	if err != nil {
+		return fmt.Errorf("connect %s: %w", endpoint, err)
+	}
+
+	// Touch + save the chosen profile so it sorts to the top next
+	// time. Touch errors are non-fatal; we still proceed into the
+	// TUI.
+	if profileName != "" {
+		if err := store.Touch(profileName); err == nil {
+			_ = store.Save()
+		}
+	}
+
+	p := tea.NewProgram(initialModel(endpoint, c), tea.WithAltScreen())
+	if _, err := p.Run(); err != nil {
+		return err
+	}
+	return nil
+}
+
+// resolveEndpoint picks one of:
+//   - --endpoint flag (optionally --save-as adds it to the store)
+//   - --profile flag
+//   - splash picker (interactive)
+//
+// Returns ("", "", nil) when the user cancels the picker.
+func resolveEndpoint(store *profiles.Store, endpointFlag, profileFlag, saveAs string) (endpoint, name string, err error) {
+	switch {
+	case endpointFlag != "":
+		if saveAs != "" {
+			if err := profiles.ValidateName(saveAs); err != nil {
+				return "", "", fmt.Errorf("--save-as: %w", err)
+			}
+			if err := profiles.ValidateEndpoint(endpointFlag); err != nil {
+				return "", "", fmt.Errorf("--endpoint: %w", err)
+			}
+			if err := store.Add(profiles.Profile{Name: saveAs, Endpoint: endpointFlag}); err != nil {
+				return "", "", fmt.Errorf("save profile: %w", err)
+			}
+			if err := store.Save(); err != nil {
+				return "", "", fmt.Errorf("save profiles: %w", err)
+			}
+			return endpointFlag, saveAs, nil
+		}
+		return endpointFlag, "", nil
+
+	case profileFlag != "":
+		p, err := store.Find(profileFlag)
+		if err != nil {
+			return "", "", fmt.Errorf("profile %q: %w", profileFlag, err)
+		}
+		return p.Endpoint, p.Name, nil
+
+	default:
+		return runSplash(store)
+	}
+}
+
+func runSplash(store *profiles.Store) (endpoint, name string, err error) {
+	sp := splash.New(store)
+	p := tea.NewProgram(sp, tea.WithAltScreen())
+	if _, err := p.Run(); err != nil {
+		return "", "", err
+	}
+	r := sp.Result()
+	if r.Cancelled || r.Selected == nil {
+		return "", "", nil
+	}
+	return r.Selected.Endpoint, r.Selected.Name, nil
+}
+
+func loadProfiles() (*profiles.Store, error) {
+	path, err := profiles.DefaultPath()
+	if err != nil {
+		return nil, err
+	}
+	return profiles.Load(path)
 }
