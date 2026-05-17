@@ -183,6 +183,16 @@ func (m *model) handleKey(key string) (tea.Model, tea.Cmd) {
 		m.mode = modeSnapshots
 		return m, nil
 
+	case "enter":
+		// Cluster mode + store column focused → jump into streams
+		// mode bound to the chosen store. In every other context
+		// enter is the same as `l' (descend within the ranger).
+		if m.mode == modeCluster && m.cluster.Focus() == 0 {
+			if store := m.cluster.SelectedStore(); store != "" {
+				return m, m.jumpToStreams(store)
+			}
+		}
+
 	case "e":
 		return m, m.editSelected()
 	}
@@ -191,6 +201,19 @@ func (m *model) handleKey(key string) (tea.Model, tea.Cmd) {
 	cmd, _ := m.activeRanger().HandleKey(key)
 	m.syncDetail()
 	return m, cmd
+}
+
+// jumpToStreams rebinds the streams view to store, switches mode,
+// and returns the new view's Init() so the first fetch fires
+// immediately. Existing streams goroutines are released via Stop().
+func (m *model) jumpToStreams(store string) tea.Cmd {
+	if store != m.activeStore {
+		m.activeStore = store
+		m.streams.Ranger.Stop()
+		m.streams = modes.BuildStreams(m.client, store)
+	}
+	m.mode = modeStreams
+	return m.streams.Ranger.Init()
 }
 
 func (m *model) editSelected() tea.Cmd {

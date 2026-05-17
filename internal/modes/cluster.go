@@ -170,6 +170,16 @@ func (s *clusterStoresCol) probe() tea.Cmd {
 // kick a probe (e.g. on mode switch + on selection change).
 func (v *ClusterView) HealthProbeCmd() tea.Cmd { return v.storesCol.probe() }
 
+// SelectedStore — id of the store currently highlighted in col 1,
+// or "". Used by the top-level model's enter handler to jump into
+// streams mode bound to this store.
+func (v *ClusterView) SelectedStore() string { return v.storesCol.Selected() }
+
+// Focus — current ranger focus index (0/1/2). Exposed so the parent
+// model can decide whether enter means "jump to streams" (col 0) or
+// "descend within ranger" (col 1/2).
+func (v *ClusterView) Focus() int { return v.Ranger.Focused() }
+
 //------------------------------------------------------------------------------
 // Column 2 — nodes hosting the selected store
 
@@ -235,14 +245,17 @@ func (n *clusterNodesCol) View(w, h int, active bool) string {
 	hp := n.topo.Health(n.parent)
 	rows := make([]string, len(nodes))
 	for i, inst := range nodes {
-		leader := "  "
+		// Leader marker hangs at the end, after the mode chip, so
+		// the IP column stays aligned regardless of terminal star-
+		// glyph width quirks.
+		leader := ""
 		if inst.Node == hp.Leader {
-			leader = theme.BadgeOK.Inline(true).Render("★ ")
+			leader = "  " + theme.BadgeOK.Inline(true).Render("leader")
 		}
-		rows[i] = fmt.Sprintf("%s%s %s",
+		rows[i] = fmt.Sprintf("%s %s%s",
+			padRight(shortNodeName(inst.Node), 18),
+			theme.RowDim.Inline(true).Render(padRight(string(inst.Mode), 8)),
 			leader,
-			padRight(shortNodeName(inst.Node), 32),
-			theme.RowDim.Inline(true).Render(string(inst.Mode)),
 		)
 	}
 	return renderList(rows, n.selected, w, h, active)
