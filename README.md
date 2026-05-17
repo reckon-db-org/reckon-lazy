@@ -1,6 +1,6 @@
 # reckon-lazy
 
-A terminal UI for the [ReckonDB](https://codeberg.org/reckon-db-org/reckon-db) event store, in the spirit of `lazygit` / `lazydocker` / `k9s`.
+A terminal UI for the [ReckonDB](https://codeberg.org/reckon-db-org/reckon-db) event store, in the spirit of `lazygit` / `lazydocker` / `k9s` / `ranger`.
 
 The binary is named **`lazyreckon`** to fit the lazy-* family; the repo is `reckon-lazy` for org-naming consistency.
 
@@ -8,32 +8,50 @@ The binary is named **`lazyreckon`** to fit the lazy-* family; the repo is `reck
 lazyreckon --endpoint beam01.lab:50051
 ```
 
-## Status
+## Layout
 
-`v0.1.0` — first usable pane lands. The `stores` tab is live: a streaming view of every (store_id, node) registration in the cluster, refreshed via `StoresService.WatchStores`.
+Three-column miller-columns view, ranger-style. Header carries the active store and live cluster health; a mode strip at the bottom swaps what the columns list.
 
-The other four tabs are placeholders; they land as the [reckon-go](https://codeberg.org/reckon-db-org/reckon-go) SDK wrappers gain coverage of the underlying RPCs.
+```
+┌─ ◉ lazyreckon  · store default_store  · ● 4/4 lead .12 ──┐
+│                                                          │
+│  streams      │  events             │  detail            │
+│  foo$1        │  v0 user_v1         │  type:    user_v1  │
+│▸ foo$2        │▸ v1 user_v2         │  version: 1        │
+│  bar$1        │  v2 order_v1        │  data:             │
+│  baz$7        │                     │    { "id": 42 }    │
+│                                                          │
+├─ 1 streams · 2 subscriptions · 3 snapshots ──────────────┤
+│ j/k move  h/l in/out  1-3 mode  e edit  q quit    15:04  │
+└──────────────────────────────────────────────────────────┘
+```
 
-## Tabs
+Adaptive: three columns at ≥100 wide, two at 80-99 (parent breadcrumbed), one at <80 (focused only).
 
-| # | Tab | Wire source | Status |
+## Modes
+
+| # | Mode | Columns | Status |
 |---|---|---|---|
-| 1 | stores | `StoresService.WatchStores` (live) | ✅ |
-| 2 | streams | `StreamService.ListStreams` + `GetStreamVersion` | ⬜ |
-| 3 | events | `SubscriptionService.Subscribe` (live tail) | ⬜ |
-| 4 | subscriptions | `SubscriptionService.{List, GetSubscriptionLag}` | ⬜ |
-| 5 | snapshots | `SnapshotService.ListAllSnapshots` | ⬜ |
+| 1 | streams | streams → events → event detail | ✅ |
+| 2 | subscriptions | subs → checkpoint/lag → metadata | ⬜ stub |
+| 3 | snapshots | streams → versions → data | ⬜ stub |
 
-Read-only for v0. Write actions (cancel subscription, force snapshot, scavenge) are a follow-up once the read flow is solid.
+Subs and snaps land as the [reckon-go](https://codeberg.org/reckon-db-org/reckon-go) SDK gains the underlying wrappers. The mode strip works end-to-end against the stubs today.
 
 ## Keys
 
 | Key | Action |
 |---|---|
-| `1` – `5` | Jump to tab |
-| `tab` / `→` / `l` | Next tab |
-| `shift+tab` / `←` / `h` | Previous tab |
+| `j` / `k` (or `↓`/`↑`) | Move within focused column |
+| `h` / `l` (or `←`/`→` / `enter`) | Ascend / descend the hierarchy |
+| `g` / `G` | Jump to top / bottom of focused column |
+| `1` – `3` | Switch mode |
+| `e` | Open selected event in `$EDITOR` (read-only) |
 | `q` / `ctrl+c` | Quit |
+
+### Editor handoff
+
+`e` on a selected event dumps `{envelope + data + metadata}` as JSON to `$XDG_CACHE_HOME/lazyreckon/<stream>_v<n>.json` and runs `$EDITOR` on it (falls back through `$VISUAL`, `nvim`, `vim`, `nano`, `less`). Bubbletea's altscreen is suspended for the duration; control returns when the editor exits. Writeback is ignored — events are immutable.
 
 ## Visual identity
 
@@ -46,11 +64,24 @@ Palette and glyph come from the reckon-portal artwork (Seshat, eye-of-horus, sph
 
 Defined in [`internal/theme`](internal/theme/theme.go).
 
+## Layout (source)
+
+```
+internal/
+  theme/      lipgloss palette + named styles
+  ui/         header, mode strip, status bar (chrome)
+  ranger/     column interface + orchestrator
+  modes/      one wired ranger triple per top-level mode
+  editor/     $EDITOR handoff via tea.ExecProcess
+cmd/lazyreckon/
+  main.go     top-level model + key routing
+```
+
 ## Stack
 
-- [Bubble Tea](https://github.com/charmbracelet/bubbletea) for the TUI runtime
-- [lipgloss](https://github.com/charmbracelet/lipgloss) for styling
-- [reckon-go](https://codeberg.org/reckon-db-org/reckon-go) for the gRPC client
+- [Bubble Tea](https://github.com/charmbracelet/bubbletea) — TUI runtime
+- [lipgloss](https://github.com/charmbracelet/lipgloss) — styling
+- [reckon-go](https://codeberg.org/reckon-db-org/reckon-go) — gRPC client
 
 ## Build
 

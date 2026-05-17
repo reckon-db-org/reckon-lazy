@@ -7,6 +7,41 @@ Versioning: [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed — Ranger three-column layout (breaking)
+
+Tear out the tabs chrome. Layout is now a miller-columns view in the
+spirit of `ranger(1)`:
+
+```
+header (store + cluster health + endpoint)
+─────────────────────────────────────────────
+streams  │  events             │  detail
+─────────────────────────────────────────────
+mode strip (1 streams · 2 subs · 3 snaps)
+status (j/k h/l 1-3 e q · clock)
+```
+
+- `j`/`k` move within the focused column; `h`/`l` ascend/descend the
+  hierarchy; parent selection drives child contents.
+- Adaptive collapse: 3 cols ≥ 100w, 2 cols 80-99w (parent
+  breadcrumbed), 1 col < 80w (focused only).
+- The "stores" tab is gone — topology + health now lives in the
+  always-on header, sourced from a top-level `WatchStores` stream.
+
+### Added
+
+- `e` on the streams mode's event opens `$EDITOR` (read-only)
+  on `$XDG_CACHE_HOME/lazyreckon/<stream>_v<n>.json` containing
+  the full envelope + decoded data + metadata. Falls back through
+  `$VISUAL`, `nvim`, `vim`, `nano`, `less`. Bubbletea's altscreen
+  is suspended for the duration via `tea.ExecProcess`.
+- Subscriptions + snapshots modes ship as 3-column stubs so the
+  mode strip works end-to-end; wired in follow-ups as the SDK
+  gains the underlying coverage.
+- `internal/ranger` — reusable column interface + orchestrator
+- `internal/modes` — one wired triple per mode
+- `internal/editor` — `$EDITOR` handoff
+
 ## [0.1.0] - 2026-05-17
 
 First usable release. Five-tab chrome + the `stores` tab live-streaming
