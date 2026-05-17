@@ -1,116 +1,234 @@
 // lazyreckon — a terminal UI for the ReckonDB event store, in the
 // spirit of lazygit / lazydocker / k9s.
 //
-// Repo: codeberg.org/reckon-db-org/reckon-lazy (binary stays
-// `lazyreckon` to fit the lazy-* family).
+// Layout: ranger-style three-column miller view. Bottom mode strip
+// swaps what the columns list (streams / subscriptions / snapshots).
+// Header carries the active store + cluster health.
 package main
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"os"
-	"strings"
+	"sort"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
 	reckon "codeberg.org/reckon-db-org/reckon-go"
-	"codeberg.org/reckon-db-org/reckon-lazy/internal/panes"
-	"codeberg.org/reckon-db-org/reckon-lazy/internal/theme"
+	"codeberg.org/reckon-db-org/reckon-go/stores"
+	"codeberg.org/reckon-db-org/reckon-go/streams"
+	"codeberg.org/reckon-db-org/reckon-lazy/internal/editor"
+	"codeberg.org/reckon-db-org/reckon-lazy/internal/modes"
+	"codeberg.org/reckon-db-org/reckon-lazy/internal/ranger"
 	"codeberg.org/reckon-db-org/reckon-lazy/internal/ui"
 )
+
+type modeIdx int
+
+const (
+	modeStreams modeIdx = iota
+	modeSubscriptions
+	modeSnapshots
+)
+
+var modeLabels = []string{"streams", "subscriptions", "snapshots"}
 
 type model struct {
 	endpoint string
 	client   *reckon.Client
 
-	tabs   []panes.Pane
-	active int
+	// Header data: live store topology + chosen active store.
+	topology     map[string]stores.Instance // key = store_id+"@"+node
+	topologyErr  error
+	activeStore  string
+
+	// Mode + ranger.
+	mode    modeIdx
+	streams *modes.StreamsView
+	subs    *modes.SubscriptionsView
+	snaps   *modes.SnapshotsView
 
 	width, height int
 
-	// tick fires every second to refresh "since" timestamps and
-	// other time-derived labels.
 	clock time.Time
 }
 
-type tickMsg time.Time
-
-func tick() tea.Cmd {
-	return tea.Tick(time.Second, func(t time.Time) tea.Msg { return tickMsg(t) })
+func initialModel(endpoint string, c *reckon.Client) *model {
+	m := &model{
+		endpoint:    endpoint,
+		client:      c,
+		topology:    map[string]stores.Instance{},
+		activeStore: "default_store",
+		mode:        modeStreams,
+		clock:       time.Now(),
+	}
+	m.streams = modes.BuildStreams(c, m.activeStore)
+	m.subs = modes.BuildSubscriptions(c, m.activeStore)
+	m.snaps = modes.BuildSnapshots(c, m.activeStore)
+	return m
 }
 
-func newModel(endpoint string, c *reckon.Client) model {
-	return model{
-		endpoint: endpoint,
-		client:   c,
-		tabs: []panes.Pane{
-			panes.NewStores(c),
-			panes.NewPlaceholder("streams", "StreamService.ListStreams"),
-			panes.NewPlaceholder("events", "SubscriptionService.Subscribe"),
-			panes.NewPlaceholder("subscriptions", "SubscriptionService.{List,GetLag}"),
-			panes.NewPlaceholder("snapshots", "SnapshotService.ListAllSnapshots"),
-		},
-		active: 0,
-		clock:  time.Now(),
+func (m *model) activeRanger() *ranger.Ranger {
+	switch m.mode {
+	case modeSubscriptions:
+		return m.subs.Ranger
+	case modeSnapshots:
+		return m.snaps.Ranger
+	default:
+		return m.streams.Ranger
 	}
 }
 
-func (m model) Init() tea.Cmd {
-	cmds := []tea.Cmd{tick()}
-	for _, p := range m.tabs {
-		if c := p.Init(); c != nil {
-			cmds = append(cmds, c)
-		}
+func (m *model) syncDetail() {
+	switch m.mode {
+	case modeStreams:
+		m.streams.SyncDetail()
+	case modeSubscriptions:
+		m.subs.SyncDetail()
+	case modeSnapshots:
+		m.snaps.SyncDetail()
+	}
+}
+
+//------------------------------------------------------------------------------
+// Init
+
+func (m *model) Init() tea.Cmd {
+	cmds := []tea.Cmd{
+		tickCmd(),
+		m.watchStoresCmd(),
+		m.streams.Ranger.Init(),
+		m.subs.Ranger.Init(),
+		m.snaps.Ranger.Init(),
 	}
 	return tea.Batch(cmds...)
 }
 
-func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+//------------------------------------------------------------------------------
+// Update
+
+func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch m2 := msg.(type) {
 	case tea.WindowSizeMsg:
-		m.width = m2.Width
-		m.height = m2.Height
+		m.width, m.height = m2.Width, m2.Height
 		return m, nil
 
 	case tea.KeyMsg:
-		switch m2.String() {
-		case "q", "ctrl+c":
-			m.shutdown()
-			return m, tea.Quit
-		case "tab", "right", "l":
-			m.active = (m.active + 1) % len(m.tabs)
-			return m, nil
-		case "shift+tab", "left", "h":
-			m.active = (m.active - 1 + len(m.tabs)) % len(m.tabs)
-			return m, nil
-		case "1", "2", "3", "4", "5":
-			idx := int(m2.String()[0] - '1')
-			if idx < len(m.tabs) {
-				m.active = idx
-			}
-			return m, nil
-		}
+		return m.handleKey(m2.String())
 
 	case tickMsg:
 		m.clock = time.Time(m2)
-		return m, tick()
+		return m, tickCmd()
+
+	case storesTickMsg:
+		// Push every observed event into topology, then re-arm.
+		for _, ev := range m2.events {
+			key := ev.Instance.StoreID + "@" + ev.Instance.Node
+			if ev.Type == stores.EventRetired {
+				delete(m.topology, key)
+			} else {
+				m.topology[key] = ev.Instance
+			}
+		}
+		if m2.err != nil {
+			m.topologyErr = m2.err
+		}
+		// Re-arm.
+		return m, m.watchStoresPollCmd(m2.events_ch, m2.errs_ch)
+
+	case editor.DoneMsg:
+		// Nothing to do — bubbletea has already restored the altscreen.
+		// Could surface a status message if we wanted to.
+		return m, nil
 	}
 
-	// Fan messages out to every pane so background streams in
-	// hidden tabs keep draining.
-	var cmds []tea.Cmd
-	for _, p := range m.tabs {
-		if cmd, _ := p.Update(msg); cmd != nil {
-			cmds = append(cmds, cmd)
-		}
-	}
-	return m, tea.Batch(cmds...)
+	// Fan the message through the active ranger only — non-active
+	// modes don't need wakeups for raw key/tick messages.
+	cmd := m.activeRanger().Update(msg)
+	m.syncDetail()
+	return m, cmd
 }
 
-func (m model) View() string {
+func (m *model) handleKey(key string) (tea.Model, tea.Cmd) {
+	switch key {
+	case "q", "ctrl+c":
+		m.shutdown()
+		return m, tea.Quit
+
+	case "1":
+		m.mode = modeStreams
+		return m, nil
+	case "2":
+		m.mode = modeSubscriptions
+		return m, nil
+	case "3":
+		m.mode = modeSnapshots
+		return m, nil
+
+	case "e":
+		return m, m.editSelected()
+	}
+
+	// Delegate the rest to the ranger.
+	cmd, _ := m.activeRanger().HandleKey(key)
+	m.syncDetail()
+	return m, cmd
+}
+
+func (m *model) editSelected() tea.Cmd {
+	if m.mode != modeStreams {
+		return nil
+	}
+	ev, ok := m.streams.SelectedEvent()
+	if !ok {
+		return nil
+	}
+	payload := buildEditorPayload(ev)
+	name := fmt.Sprintf("%s_v%d", ev.StreamID, ev.Version)
+	return editor.Inspect(name, "json", payload)
+}
+
+// buildEditorPayload combines envelope + data + metadata into one
+// readable JSON document for the editor.
+func buildEditorPayload(ev streams.RecordedEvent) []byte {
+	envelope := map[string]any{
+		"event_id":   ev.EventID,
+		"event_type": ev.EventType,
+		"stream_id":  ev.StreamID,
+		"version":    ev.Version,
+		"timestamp":  ev.Timestamp.Format(time.RFC3339),
+		"tags":       ev.Tags,
+	}
+	envelope["data"] = decodeJSONOrRaw(ev.Data)
+	if len(ev.Metadata) > 0 {
+		envelope["metadata"] = decodeJSONOrRaw(ev.Metadata)
+	}
+	out, err := json.MarshalIndent(envelope, "", "  ")
+	if err != nil {
+		return []byte(fmt.Sprintf("marshal failed: %v\n\nraw data: %s", err, ev.Data))
+	}
+	return out
+}
+
+func decodeJSONOrRaw(raw []byte) any {
+	if len(raw) == 0 {
+		return nil
+	}
+	var v any
+	if err := json.Unmarshal(raw, &v); err == nil {
+		return v
+	}
+	return string(raw)
+}
+
+//------------------------------------------------------------------------------
+// View
+
+func (m *model) View() string {
 	w := m.width
 	if w < 40 {
 		w = 80
@@ -120,46 +238,111 @@ func (m model) View() string {
 		h = 24
 	}
 
-	header := ui.Header(m.endpoint, w)
+	health := m.deriveHealth()
+	header := ui.Header(m.endpoint, m.activeStore, health, w)
+	modeBar := ui.ModeStrip(modeLabels, int(m.mode), w)
 
-	labels := make([]string, len(m.tabs))
-	for i, p := range m.tabs {
-		labels[i] = fmt.Sprintf("%d %s", i+1, p.Title())
-	}
-	tabBar := ui.Tabs(labels, m.active, w)
-
-	// Pane content area sits between tab strip and status bar.
-	paneInnerW := w - 4 // border + padding
-	paneInnerH := h - 5 // header + tab + status + padding
-	content := m.tabs[m.active].View(paneInnerW, paneInnerH)
-	body := theme.Pane.Width(paneInnerW + 2).Render(content)
+	bodyH := h - 4 // header + modebar + statusbar + 1 padding line
+	body := m.activeRanger().View(w, bodyH)
 
 	hints := []ui.KeyHint{
-		{Key: "1-5", Action: "jump"},
-		{Key: "tab", Action: "next"},
+		{Key: "j/k", Action: "move"},
+		{Key: "h/l", Action: "in/out"},
+		{Key: "1-3", Action: "mode"},
+		{Key: "e", Action: "edit"},
 		{Key: "q", Action: "quit"},
 	}
-	summary := fmt.Sprintf("%s · %s",
-		theme.HeaderAccent.Inline(true).Render(theme.Glyph),
-		m.clock.Format("15:04:05"))
+	summary := fmt.Sprintf("%s · %s", "◉", m.clock.Format("15:04:05"))
 	status := ui.StatusBar(hints, summary, w)
 
 	return lipgloss.JoinVertical(lipgloss.Left,
 		header,
-		tabBar,
+		modeBar,
 		body,
-		strings.Repeat(" ", 0), // breathing room
 		status,
 	)
 }
 
-func (m model) shutdown() {
-	for _, p := range m.tabs {
-		p.Stop()
+func (m *model) deriveHealth() ui.Health {
+	nodes := map[string]bool{}
+	for _, inst := range m.topology {
+		if inst.StoreID == m.activeStore {
+			nodes[inst.Node] = true
+		}
 	}
-	if m.client != nil {
-		_ = m.client.Close()
+	total := len(nodes)
+	// We don't have failed-node info from WatchStores alone; treat
+	// every observed instance as "up". A future cluster pane can
+	// fill in real liveness from HealthService.
+	return ui.Health{
+		NodesUp:    total,
+		NodesTotal: total,
+		OK:         total > 0 && m.topologyErr == nil,
 	}
+}
+
+//------------------------------------------------------------------------------
+// Stores watch — top-level, drives header
+
+type storesTickMsg struct {
+	events     []stores.Event
+	err        error
+	events_ch  <-chan stores.Event
+	errs_ch    <-chan error
+}
+
+func (m *model) watchStoresCmd() tea.Cmd {
+	ctx := context.Background() // lives for app lifetime
+	events, errs := m.client.Stores().Watch(ctx, stores.WithSnapshot(true))
+	return m.watchStoresPollCmd(events, errs)
+}
+
+func (m *model) watchStoresPollCmd(events <-chan stores.Event, errs <-chan error) tea.Cmd {
+	return func() tea.Msg {
+		// Drain at least one event, then any others that are
+		// immediately available, then return as a batch. Keeps
+		// the message rate bounded under churn.
+		ev, ok := <-events
+		if !ok {
+			err := <-errs
+			return storesTickMsg{err: err, events_ch: events, errs_ch: errs}
+		}
+		batch := []stores.Event{ev}
+	drain:
+		for {
+			select {
+			case e, ok := <-events:
+				if !ok {
+					break drain
+				}
+				batch = append(batch, e)
+			default:
+				break drain
+			}
+		}
+		sort.SliceStable(batch, func(i, j int) bool {
+			return batch[i].At.Before(batch[j].At)
+		})
+		return storesTickMsg{events: batch, events_ch: events, errs_ch: errs}
+	}
+}
+
+//------------------------------------------------------------------------------
+// Clock tick
+
+type tickMsg time.Time
+
+func tickCmd() tea.Cmd {
+	return tea.Tick(time.Second, func(t time.Time) tea.Msg { return tickMsg(t) })
+}
+
+//------------------------------------------------------------------------------
+
+func (m *model) shutdown() {
+	m.streams.Ranger.Stop()
+	m.subs.Ranger.Stop()
+	m.snaps.Ranger.Stop()
+	_ = m.client.Close()
 }
 
 func main() {
@@ -175,7 +358,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	p := tea.NewProgram(newModel(*endpoint, c), tea.WithAltScreen())
+	p := tea.NewProgram(initialModel(*endpoint, c), tea.WithAltScreen())
 	if _, err := p.Run(); err != nil {
 		fmt.Fprintf(os.Stderr, "lazyreckon: %v\n", err)
 		os.Exit(1)
