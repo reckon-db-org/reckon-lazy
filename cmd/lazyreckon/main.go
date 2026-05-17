@@ -19,8 +19,10 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	reckon "codeberg.org/reckon-db-org/reckon-go"
+	"codeberg.org/reckon-db-org/reckon-go/snapshots"
 	"codeberg.org/reckon-db-org/reckon-go/stores"
 	"codeberg.org/reckon-db-org/reckon-go/streams"
+	"codeberg.org/reckon-db-org/reckon-go/subscriptions"
 	"codeberg.org/reckon-db-org/reckon-lazy/internal/cluster"
 	"codeberg.org/reckon-db-org/reckon-lazy/internal/editor"
 	"codeberg.org/reckon-db-org/reckon-lazy/internal/modes"
@@ -237,16 +239,41 @@ func (m *model) jumpToStreams(store string) tea.Cmd {
 }
 
 func (m *model) editSelected() tea.Cmd {
-	if m.mode != modeStreams {
-		return nil
+	switch m.mode {
+	case modeStreams:
+		ev, ok := m.streams.SelectedEvent()
+		if !ok {
+			return nil
+		}
+		return editor.Inspect(
+			fmt.Sprintf("%s_v%d", ev.StreamID, ev.Version),
+			"json",
+			buildEditorPayload(ev),
+		)
+
+	case modeSubscriptions:
+		info, ok := m.subs.SelectedSubscription()
+		if !ok {
+			return nil
+		}
+		return editor.Inspect(
+			"subscription_"+info.Name,
+			"json",
+			buildSubPayload(info),
+		)
+
+	case modeSnapshots:
+		rec, ok := m.snaps.SelectedSnapshot()
+		if !ok {
+			return nil
+		}
+		return editor.Inspect(
+			fmt.Sprintf("snap_%s_v%d", rec.StreamID, rec.Version),
+			"json",
+			buildSnapshotPayload(rec),
+		)
 	}
-	ev, ok := m.streams.SelectedEvent()
-	if !ok {
-		return nil
-	}
-	payload := buildEditorPayload(ev)
-	name := fmt.Sprintf("%s_v%d", ev.StreamID, ev.Version)
-	return editor.Inspect(name, "json", payload)
+	return nil
 }
 
 // buildEditorPayload combines envelope + data + metadata into one
@@ -268,6 +295,37 @@ func buildEditorPayload(ev streams.RecordedEvent) []byte {
 	if err != nil {
 		return []byte(fmt.Sprintf("marshal failed: %v\n\nraw data: %s", err, ev.Data))
 	}
+	return out
+}
+
+func buildSubPayload(in subscriptions.Info) []byte {
+	envelope := map[string]any{
+		"id":         in.ID,
+		"name":       in.Name,
+		"type":       string(in.Type),
+		"selector":   in.Selector,
+		"pool_size":  in.PoolSize,
+		"checkpoint": in.Checkpoint,
+		"created_at": in.CreatedAt.Format(time.RFC3339),
+	}
+	out, _ := json.MarshalIndent(envelope, "", "  ")
+	return out
+}
+
+func buildSnapshotPayload(r snapshots.Record) []byte {
+	envelope := map[string]any{
+		"stream_id": r.StreamID,
+		"version":   r.Version,
+		"timestamp": r.Timestamp.Format(time.RFC3339),
+		"data":      decodeJSONOrRaw(r.Data),
+	}
+	if len(r.Metadata) > 0 {
+		envelope["metadata"] = decodeJSONOrRaw(r.Metadata)
+	}
+	if len(r.AnchorHash) > 0 {
+		envelope["anchor_hash_hex"] = fmt.Sprintf("%x", r.AnchorHash)
+	}
+	out, _ := json.MarshalIndent(envelope, "", "  ")
 	return out
 }
 

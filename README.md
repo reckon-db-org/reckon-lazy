@@ -34,8 +34,8 @@ Adaptive: three columns at ≥100 wide, two at 80-99 (parent breadcrumbed), one 
 |---|---|---|---|
 | 1 | cluster | 4-pane grid (top: nodes ↔ node detail; bottom: stores ↔ store info) | ✅ |
 | 2 | streams | streams → events → event detail | ✅ |
-| 3 | subscriptions | subs → checkpoint/lag → metadata | ⬜ stub |
-| 4 | snapshots | streams → versions → data | ⬜ stub |
+| 3 | subscriptions | subs → lag → full info | ✅ |
+| 4 | snapshots | streams → versions → data | ✅ |
 
 Boot lands on **cluster** so the first thing you see is whether the cluster is healthy (leader, quorum, term, failed nodes). Drill into data with `2`. Subs and snaps land as the [reckon-go](https://codeberg.org/reckon-db-org/reckon-go) SDK gains the underlying wrappers.
 
