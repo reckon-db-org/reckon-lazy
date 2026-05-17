@@ -32,7 +32,7 @@ Adaptive: three columns at ≥100 wide, two at 80-99 (parent breadcrumbed), one 
 
 | # | Mode | Columns | Status |
 |---|---|---|---|
-| 1 | cluster | stores → nodes (★ leader) → node detail + cluster banner | ✅ |
+| 1 | cluster | 4-pane grid (top: nodes ↔ node detail; bottom: stores ↔ store info) | ✅ |
 | 2 | streams | streams → events → event detail | ✅ |
 | 3 | subscriptions | subs → checkpoint/lag → metadata | ⬜ stub |
 | 4 | snapshots | streams → versions → data | ⬜ stub |
@@ -44,9 +44,11 @@ Boot lands on **cluster** so the first thing you see is whether the cluster is h
 | Key | Action |
 |---|---|
 | `j` / `k` (or `↓`/`↑`) | Move within focused column |
-| `h` / `l` (or `←`/`→` / `enter`) | Ascend / descend the hierarchy |
+| `h` / `l` (or `←`/`→` / `enter`) | Ascend / descend within the focused ranger |
+| `tab` | (Cluster mode) Swap focus between top (nodes) and bottom (stores) rangers |
 | `g` / `G` | Jump to top / bottom of focused column |
 | `1` – `4` | Switch mode (1=cluster, 2=streams, 3=subs, 4=snaps) |
+| `enter` (on a store in cluster) | Open the selected store in streams mode |
 | `e` | Open selected event in `$EDITOR` (read-only) |
 | `q` / `ctrl+c` | Quit |
 

@@ -75,18 +75,28 @@ func initialModel(endpoint string, c *reckon.Client) *model {
 	m.streams = modes.BuildStreams(c, m.activeStore)
 	m.subs = modes.BuildSubscriptions(c, m.activeStore)
 	m.snaps = modes.BuildSnapshots(c, m.activeStore)
-	m.cluster = modes.BuildCluster(c, topo)
+	m.cluster = modes.BuildCluster(c, topo, m.activeStore, m.setActiveStore)
 	return m
 }
 
+// setActiveStore is the callback the cluster mode's stores column
+// calls when the user picks a different store. Streams/subs/snaps
+// stay bound to whatever store they were built with — we only
+// rebuild on an explicit jumpToStreams (which user-selects this
+// store as the working set, not just hovers over it in cluster).
+func (m *model) setActiveStore(store string) {
+	m.activeStore = store
+}
+
+// activeRanger returns the *Ranger for the modes that are simple
+// rangers. Cluster mode is special (composite of two rangers); for
+// it, handleKey/Update/View route directly through m.cluster.
 func (m *model) activeRanger() *ranger.Ranger {
 	switch m.mode {
 	case modeSubscriptions:
 		return m.subs.Ranger
 	case modeSnapshots:
 		return m.snaps.Ranger
-	case modeCluster:
-		return m.cluster.Ranger
 	default:
 		return m.streams.Ranger
 	}
@@ -116,7 +126,7 @@ func (m *model) Init() tea.Cmd {
 		m.streams.Ranger.Init(),
 		m.subs.Ranger.Init(),
 		m.snaps.Ranger.Init(),
-		m.cluster.Ranger.Init(),
+		m.cluster.Init(),
 	}
 	return tea.Batch(cmds...)
 }
@@ -157,9 +167,14 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	// Fan the message through the active ranger only — non-active
-	// modes don't need wakeups for raw key/tick messages.
-	cmd := m.activeRanger().Update(msg)
+	// Fan the message through the active mode. Cluster has its own
+	// Update (it owns a 4-pane composite, not a single ranger).
+	var cmd tea.Cmd
+	if m.mode == modeCluster {
+		cmd = m.cluster.Update(msg)
+	} else {
+		cmd = m.activeRanger().Update(msg)
+	}
 	m.syncDetail()
 	return m, cmd
 }
@@ -184,21 +199,26 @@ func (m *model) handleKey(key string) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case "enter":
-		// Cluster mode + store column focused → jump into streams
-		// mode bound to the chosen store. In every other context
-		// enter is the same as `l' (descend within the ranger).
-		if m.mode == modeCluster && m.cluster.Focus() == 0 {
-			if store := m.cluster.SelectedStore(); store != "" {
-				return m, m.jumpToStreams(store)
-			}
+		// In cluster mode with the stores ranger focused on its
+		// list column, enter is "open this store in streams mode".
+		// Elsewhere enter falls through to ranger semantics (= l).
+		if m.mode == modeCluster &&
+			m.cluster.FocusedRanger() == 1 &&
+			m.cluster.SelectedStore() != "" {
+			return m, m.jumpToStreams(m.cluster.SelectedStore())
 		}
 
 	case "e":
 		return m, m.editSelected()
 	}
 
-	// Delegate the rest to the ranger.
-	cmd, _ := m.activeRanger().HandleKey(key)
+	// Delegate the rest to the active mode.
+	var cmd tea.Cmd
+	if m.mode == modeCluster {
+		cmd, _ = m.cluster.HandleKey(key)
+	} else {
+		cmd, _ = m.activeRanger().HandleKey(key)
+	}
 	m.syncDetail()
 	return m, cmd
 }
@@ -280,15 +300,25 @@ func (m *model) View() string {
 	modeBar := ui.ModeStrip(modeLabels, int(m.mode), w)
 
 	bodyH := h - 4 // header + modebar + statusbar + 1 padding line
-	body := m.activeRanger().View(w, bodyH)
+	var body string
+	if m.mode == modeCluster {
+		body = m.cluster.View(w, bodyH)
+	} else {
+		body = m.activeRanger().View(w, bodyH)
+	}
 
 	hints := []ui.KeyHint{
 		{Key: "j/k", Action: "move"},
 		{Key: "h/l", Action: "in/out"},
-		{Key: "1-4", Action: "mode"},
-		{Key: "e", Action: "edit"},
-		{Key: "q", Action: "quit"},
 	}
+	if m.mode == modeCluster {
+		hints = append(hints, ui.KeyHint{Key: "tab", Action: "swap rangers"})
+	}
+	hints = append(hints,
+		ui.KeyHint{Key: "1-4", Action: "mode"},
+		ui.KeyHint{Key: "e", Action: "edit"},
+		ui.KeyHint{Key: "q", Action: "quit"},
+	)
 	summary := fmt.Sprintf("%s · %s", "◉", m.clock.Format("15:04:05"))
 	status := ui.StatusBar(hints, summary, w)
 
@@ -383,7 +413,7 @@ func (m *model) shutdown() {
 	m.streams.Ranger.Stop()
 	m.subs.Ranger.Stop()
 	m.snaps.Ranger.Stop()
-	m.cluster.Ranger.Stop()
+	m.cluster.Stop()
 	_ = m.client.Close()
 }
 

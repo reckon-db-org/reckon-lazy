@@ -9,26 +9,38 @@ import (
 	"codeberg.org/reckon-db-org/reckon-lazy/internal/theme"
 )
 
-// Ranger holds the three columns and drives the miller-columns
-// layout, focus, and parent→child selection propagation.
+// Ranger holds a list of columns (2 or 3) and drives the
+// miller-columns layout, focus, and parent→child selection
+// propagation.
 //
-// Construction order matters: cols[0] feeds cols[1] feeds cols[2].
-// Cols 1 and 2 read their parent's Selected() value through
-// SetParentSelection — typically driven from Update once focus or
-// selection changes.
+// Construction order matters: cols[0] feeds cols[1] feeds cols[2]
+// (if present). Cols 1+ read their parent's Selected() value
+// through SetParentSelection — typically driven from Update once
+// focus or selection changes.
 type Ranger struct {
-	cols  [3]Column
-	focus int // 0, 1, or 2
+	cols  []Column
+	focus int
 }
 
-// New builds a Ranger from three columns. cols[0] is leftmost.
-func New(left, middle, right Column) *Ranger {
-	return &Ranger{cols: [3]Column{left, middle, right}, focus: 0}
+// New3 builds a 3-column Ranger. cols[0] is leftmost.
+func New3(left, middle, right Column) *Ranger {
+	return &Ranger{cols: []Column{left, middle, right}, focus: 0}
 }
+
+// New2 builds a 2-column Ranger. Useful for modes where the leaf
+// of column 1 already names the row uniquely and column 2 is the
+// detail view (e.g. cluster: nodes → detail).
+func New2(left, right Column) *Ranger {
+	return &Ranger{cols: []Column{left, right}, focus: 0}
+}
+
+// New is preserved as a 3-col alias for callers that haven't been
+// migrated yet.
+func New(left, middle, right Column) *Ranger { return New3(left, middle, right) }
 
 // Init fans Init() out to all columns.
 func (r *Ranger) Init() tea.Cmd {
-	cmds := make([]tea.Cmd, 0, 3)
+	cmds := make([]tea.Cmd, 0, len(r.cols))
 	for _, c := range r.cols {
 		if cmd := c.Init(); cmd != nil {
 			cmds = append(cmds, cmd)
@@ -37,9 +49,9 @@ func (r *Ranger) Init() tea.Cmd {
 	return tea.Batch(cmds...)
 }
 
-// HandleKey processes a navigation key. Returns the cmd to chain (or
-// nil) and whether the key was consumed.
+// HandleKey processes a navigation key. (cmd, handled).
 func (r *Ranger) HandleKey(key string) (tea.Cmd, bool) {
+	last := len(r.cols) - 1
 	switch key {
 	case "j", "down":
 		r.cols[r.focus].Move(+1)
@@ -53,13 +65,11 @@ func (r *Ranger) HandleKey(key string) (tea.Cmd, bool) {
 		}
 		return nil, true
 	case "l", "right", "enter":
-		if r.focus < 2 {
+		if r.focus < last {
 			r.focus++
 		}
 		return nil, true
 	case "g", "home":
-		// Jump to top — implemented as a large negative move so
-		// columns don't need a separate API.
 		r.cols[r.focus].Move(-1 << 30)
 		return r.propagate(), true
 	case "G", "end":
@@ -69,8 +79,7 @@ func (r *Ranger) HandleKey(key string) (tea.Cmd, bool) {
 	return nil, false
 }
 
-// Update routes a tea.Msg through every column (so background streams
-// in non-active columns keep draining). Returns the batched cmds.
+// Update routes a tea.Msg through every column.
 func (r *Ranger) Update(msg tea.Msg) tea.Cmd {
 	var cmds []tea.Cmd
 	for _, c := range r.cols {
@@ -78,33 +87,28 @@ func (r *Ranger) Update(msg tea.Msg) tea.Cmd {
 			cmds = append(cmds, cmd)
 		}
 	}
-	// Re-propagate after each batch — events that changed the
-	// upstream column's contents may have shifted selection.
 	if cmd := r.propagate(); cmd != nil {
 		cmds = append(cmds, cmd)
 	}
 	return tea.Batch(cmds...)
 }
 
-// propagate pushes parent selections to children. Returns the batch
-// of cmds from any column that wants to refetch on parent change.
+// propagate pushes parent selections to children.
 func (r *Ranger) propagate() tea.Cmd {
 	var cmds []tea.Cmd
-	if c := r.cols[1].SetParentSelection(r.cols[0].Selected()); c != nil {
-		cmds = append(cmds, c)
-	}
-	if c := r.cols[2].SetParentSelection(r.cols[1].Selected()); c != nil {
-		cmds = append(cmds, c)
+	for i := 1; i < len(r.cols); i++ {
+		if c := r.cols[i].SetParentSelection(r.cols[i-1].Selected()); c != nil {
+			cmds = append(cmds, c)
+		}
 	}
 	return tea.Batch(cmds...)
 }
 
-// Focused — current focus index (0/1/2).
+// Focused — current focus index.
 func (r *Ranger) Focused() int { return r.focus }
 
 // FocusedSelection — id of the row currently highlighted in the
-// focused column. Useful for actions like `e` (edit) that act on
-// "whatever is selected right now."
+// focused column.
 func (r *Ranger) FocusedSelection() string {
 	return r.cols[r.focus].Selected()
 }
@@ -116,61 +120,68 @@ func (r *Ranger) Stop() {
 	}
 }
 
-// View renders the three-column body at the given outer (width, height).
-// Adaptive: 3 cols ≥ 100w, 2 cols 80-99w (collapses the parent of the
-// focused col), 1 col < 80w (only the focused col).
+// View renders the body at (width, height). Adaptive: at the
+// narrowest widths we collapse to one column, then two, then the
+// full layout.
 func (r *Ranger) View(width, height int) string {
-	if width < 80 {
-		return r.renderOne(width, height)
+	switch {
+	case width < 80:
+		return r.renderCol(r.focus, width, height)
+	case width < 100 && len(r.cols) >= 3:
+		return r.renderPair(width, height)
+	default:
+		return r.renderFull(width, height)
 	}
-	if width < 100 {
-		return r.renderTwo(width, height)
-	}
-	return r.renderThree(width, height)
 }
 
-func (r *Ranger) renderThree(w, h int) string {
-	// 1 char gap between columns
-	gaps := 2
-	inner := w - gaps
-	// 28 / 32 / 40 split. Col 0 lists names (store / stream /
-	// subscription ids); 28% fits typical 13-20 char ids with
-	// a small trailing chip. Col 1 lists secondary entities
-	// (events / nodes); 32% fits "v1234 event_type_v1" comfortably.
-	// Col 2 (detail) gets the rest for JSON payloads.
-	c0w := inner * 28 / 100
-	c2w := inner * 40 / 100
-	c1w := inner - c0w - c2w
-	return joinHoriz(
-		r.renderCol(0, c0w, h),
-		r.renderCol(1, c1w, h),
-		r.renderCol(2, c2w, h),
-	)
+// renderFull lays out every column at its natural weight. The
+// weights below tune the split for 3-col vs 2-col modes.
+func (r *Ranger) renderFull(w, h int) string {
+	switch len(r.cols) {
+	case 2:
+		gap := 1
+		inner := w - gap
+		// 40 / 60 — col 0 is a list, col 1 is the detail view
+		// which wants room for kv lines and small JSON.
+		l := inner * 40 / 100
+		return joinHoriz(
+			r.renderCol(0, l, h),
+			r.renderCol(1, inner-l, h),
+		)
+	case 3:
+		gaps := 2
+		inner := w - gaps
+		// 28 / 32 / 40 — see ranger commit for rationale.
+		c0 := inner * 28 / 100
+		c2 := inner * 40 / 100
+		return joinHoriz(
+			r.renderCol(0, c0, h),
+			r.renderCol(1, inner-c0-c2, h),
+			r.renderCol(2, c2, h),
+		)
+	default:
+		return r.renderCol(r.focus, w, h)
+	}
 }
 
-func (r *Ranger) renderTwo(w, h int) string {
-	// Show the focused column + its child (or its parent, if focus
-	// is on column 2 with no child).
+// renderPair (3-col only) shows the focused column + its child,
+// or its parent at the right edge.
+func (r *Ranger) renderPair(w, h int) string {
 	leftIdx := r.focus
 	rightIdx := r.focus + 1
-	if rightIdx > 2 {
+	if rightIdx >= len(r.cols) {
 		leftIdx = r.focus - 1
 		rightIdx = r.focus
 	}
 	inner := w - 1
 	cLw := inner * 40 / 100
-	cRw := inner - cLw
 	return joinHoriz(
 		r.renderCol(leftIdx, cLw, h),
-		r.renderCol(rightIdx, cRw, h),
+		r.renderCol(rightIdx, inner-cLw, h),
 	)
 }
 
-func (r *Ranger) renderOne(w, h int) string {
-	return r.renderCol(r.focus, w, h)
-}
-
-// renderCol wraps one column in its border + title chip. Border color
+// renderCol wraps one column in its border + title chip. Border
 // brightens when active.
 func (r *Ranger) renderCol(idx, w, h int) string {
 	active := r.focus == idx
@@ -182,9 +193,8 @@ func (r *Ranger) renderCol(idx, w, h int) string {
 		titleStyle = titleStyle.Foreground(theme.Dim)
 	}
 
-	// inner content area inside the border
-	innerW := w - 2 // border
-	innerH := h - 4 // border + title + breadcrumb spacer
+	innerW := w - 2
+	innerH := h - 4
 	if innerW < 4 {
 		innerW = 4
 	}
