@@ -21,6 +21,7 @@ import (
 	reckon "codeberg.org/reckon-db-org/reckon-go"
 	"codeberg.org/reckon-db-org/reckon-go/stores"
 	"codeberg.org/reckon-db-org/reckon-go/streams"
+	"codeberg.org/reckon-db-org/reckon-lazy/internal/cluster"
 	"codeberg.org/reckon-db-org/reckon-lazy/internal/editor"
 	"codeberg.org/reckon-db-org/reckon-lazy/internal/modes"
 	"codeberg.org/reckon-db-org/reckon-lazy/internal/profiles"
@@ -35,24 +36,26 @@ const (
 	modeStreams modeIdx = iota
 	modeSubscriptions
 	modeSnapshots
+	modeCluster
 )
 
-var modeLabels = []string{"streams", "subscriptions", "snapshots"}
+var modeLabels = []string{"streams", "subscriptions", "snapshots", "cluster"}
 
 type model struct {
 	endpoint string
 	client   *reckon.Client
 
-	// Header data: live store topology + chosen active store.
-	topology     map[string]stores.Instance // key = store_id+"@"+node
-	topologyErr  error
-	activeStore  string
+	// Shared cluster topology — fed by the top-level WatchStores
+	// poller, read by the header + the cluster mode.
+	topology    *cluster.Topology
+	activeStore string
 
 	// Mode + ranger.
 	mode    modeIdx
 	streams *modes.StreamsView
 	subs    *modes.SubscriptionsView
 	snaps   *modes.SnapshotsView
+	cluster *modes.ClusterView
 
 	width, height int
 
@@ -60,10 +63,11 @@ type model struct {
 }
 
 func initialModel(endpoint string, c *reckon.Client) *model {
+	topo := cluster.New()
 	m := &model{
 		endpoint:    endpoint,
 		client:      c,
-		topology:    map[string]stores.Instance{},
+		topology:    topo,
 		activeStore: "default_store",
 		mode:        modeStreams,
 		clock:       time.Now(),
@@ -71,6 +75,7 @@ func initialModel(endpoint string, c *reckon.Client) *model {
 	m.streams = modes.BuildStreams(c, m.activeStore)
 	m.subs = modes.BuildSubscriptions(c, m.activeStore)
 	m.snaps = modes.BuildSnapshots(c, m.activeStore)
+	m.cluster = modes.BuildCluster(c, topo)
 	return m
 }
 
@@ -80,6 +85,8 @@ func (m *model) activeRanger() *ranger.Ranger {
 		return m.subs.Ranger
 	case modeSnapshots:
 		return m.snaps.Ranger
+	case modeCluster:
+		return m.cluster.Ranger
 	default:
 		return m.streams.Ranger
 	}
@@ -93,6 +100,8 @@ func (m *model) syncDetail() {
 		m.subs.SyncDetail()
 	case modeSnapshots:
 		m.snaps.SyncDetail()
+	case modeCluster:
+		m.cluster.SyncDetail()
 	}
 }
 
@@ -103,9 +112,11 @@ func (m *model) Init() tea.Cmd {
 	cmds := []tea.Cmd{
 		tickCmd(),
 		m.watchStoresCmd(),
+		modes.HealthTick(),
 		m.streams.Ranger.Init(),
 		m.subs.Ranger.Init(),
 		m.snaps.Ranger.Init(),
+		m.cluster.Ranger.Init(),
 	}
 	return tea.Batch(cmds...)
 }
@@ -127,24 +138,22 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tickCmd()
 
 	case storesTickMsg:
-		// Push every observed event into topology, then re-arm.
 		for _, ev := range m2.events {
-			key := ev.Instance.StoreID + "@" + ev.Instance.Node
-			if ev.Type == stores.EventRetired {
-				delete(m.topology, key)
-			} else {
-				m.topology[key] = ev.Instance
-			}
+			m.topology.ApplyEvent(ev)
 		}
 		if m2.err != nil {
-			m.topologyErr = m2.err
+			m.topology.SetError(m2.err)
 		}
-		// Re-arm.
-		return m, m.watchStoresPollCmd(m2.events_ch, m2.errs_ch)
+		// Re-arm and, if we're in cluster mode, kick a probe for
+		// the selected store now that topology may have new nodes.
+		probe := tea.Cmd(nil)
+		if m.mode == modeCluster {
+			probe = m.cluster.HealthProbeCmd()
+		}
+		return m, tea.Batch(m.watchStoresPollCmd(m2.events_ch, m2.errs_ch), probe)
 
 	case editor.DoneMsg:
 		// Nothing to do — bubbletea has already restored the altscreen.
-		// Could surface a status message if we wanted to.
 		return m, nil
 	}
 
@@ -170,6 +179,9 @@ func (m *model) handleKey(key string) (tea.Model, tea.Cmd) {
 	case "3":
 		m.mode = modeSnapshots
 		return m, nil
+	case "4":
+		m.mode = modeCluster
+		return m, m.cluster.HealthProbeCmd()
 
 	case "e":
 		return m, m.editSelected()
@@ -250,7 +262,7 @@ func (m *model) View() string {
 	hints := []ui.KeyHint{
 		{Key: "j/k", Action: "move"},
 		{Key: "h/l", Action: "in/out"},
-		{Key: "1-3", Action: "mode"},
+		{Key: "1-4", Action: "mode"},
 		{Key: "e", Action: "edit"},
 		{Key: "q", Action: "quit"},
 	}
@@ -267,20 +279,24 @@ func (m *model) View() string {
 
 func (m *model) deriveHealth() ui.Health {
 	nodes := map[string]bool{}
-	for _, inst := range m.topology {
-		if inst.StoreID == m.activeStore {
-			nodes[inst.Node] = true
-		}
+	for _, inst := range m.topology.NodesFor(m.activeStore) {
+		nodes[inst.Node] = true
 	}
 	total := len(nodes)
-	// We don't have failed-node info from WatchStores alone; treat
-	// every observed instance as "up". A future cluster pane can
-	// fill in real liveness from HealthService.
-	return ui.Health{
+	hp := m.topology.Health(m.activeStore)
+	out := ui.Health{
 		NodesUp:    total,
 		NodesTotal: total,
-		OK:         total > 0 && m.topologyErr == nil,
+		OK:         total > 0 && m.topology.Err() == nil,
+		Leader:     hp.Leader,
 	}
+	// If we have a real probe result, prefer its node counts.
+	if !hp.LastProbed.IsZero() && hp.NodesTotal > 0 {
+		out.NodesUp = hp.NodesUp
+		out.NodesTotal = hp.NodesTotal
+		out.OK = hp.OK
+	}
+	return out
 }
 
 //------------------------------------------------------------------------------
@@ -344,6 +360,7 @@ func (m *model) shutdown() {
 	m.streams.Ranger.Stop()
 	m.subs.Ranger.Stop()
 	m.snaps.Ranger.Stop()
+	m.cluster.Ranger.Stop()
 	_ = m.client.Close()
 }
 

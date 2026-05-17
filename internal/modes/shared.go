@@ -120,3 +120,33 @@ func errLine(err error) string {
 func kvLine(k, v string) string {
 	return theme.RowHeader.Render(fmt.Sprintf("%-9s", k)) + " " + theme.RowValue.Render(v)
 }
+
+// padRight pads s with spaces to exactly w runes (truncates with …
+// when too long).
+func padRight(s string, w int) string {
+	if len(s) >= w {
+		if w > 1 {
+			return s[:w-1] + "…"
+		}
+		return s
+	}
+	return s + strings.Repeat(" ", w-len(s))
+}
+
+// humanAgo renders a duration since t in a short form.
+func humanAgo(t time.Time) string {
+	if t.IsZero() {
+		return "—"
+	}
+	d := time.Since(t)
+	switch {
+	case d < time.Minute:
+		return fmt.Sprintf("%ds ago", int(d.Seconds()))
+	case d < time.Hour:
+		return fmt.Sprintf("%dm ago", int(d.Minutes()))
+	case d < 24*time.Hour:
+		return fmt.Sprintf("%dh ago", int(d.Hours()))
+	default:
+		return fmt.Sprintf("%dd ago", int(d.Hours())/24)
+	}
+}
