@@ -15,11 +15,11 @@ Three-column miller-columns view, ranger-style. Header carries the active store 
 ```
 ┌─ ◉ lazyreckon  · store default_store  · ● 4/4 lead .12 ──┐
 │                                                          │
-│  streams      │  events             │  detail            │
-│  foo$1        │  v0 user_v1         │  type:    user_v1  │
-│▸ foo$2        │▸ v1 user_v2         │  version: 1        │
-│  bar$1        │  v2 order_v1        │  data:             │
-│  baz$7        │                     │    { "id": 42 }    │
+│  streams                       │  events           │  detail            │
+│  users-018f6a7b8c9d4abc89…     │  v0 user_v1       │  type:    user_v1  │
+│▸ orders-018f6a7b9def4abc12…    │▸ v1 user_v2       │  version: 1        │
+│  invoices-018f6a7baaaa4bcd33…  │  v2 order_v1      │  data:             │
+│                                │                   │    { "id": 42 }    │
 │                                                          │
 ├─ 1 streams · 2 subscriptions · 3 snapshots ──────────────┤
 │ j/k move  h/l in/out  1-3 mode  e edit  q quit    15:04  │
