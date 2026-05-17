@@ -33,13 +33,13 @@ import (
 type modeIdx int
 
 const (
-	modeStreams modeIdx = iota
+	modeCluster modeIdx = iota
+	modeStreams
 	modeSubscriptions
 	modeSnapshots
-	modeCluster
 )
 
-var modeLabels = []string{"streams", "subscriptions", "snapshots", "cluster"}
+var modeLabels = []string{"cluster", "streams", "subscriptions", "snapshots"}
 
 type model struct {
 	endpoint string
@@ -69,7 +69,7 @@ func initialModel(endpoint string, c *reckon.Client) *model {
 		client:      c,
 		topology:    topo,
 		activeStore: "default_store",
-		mode:        modeStreams,
+		mode:        modeCluster,
 		clock:       time.Now(),
 	}
 	m.streams = modes.BuildStreams(c, m.activeStore)
@@ -171,17 +171,17 @@ func (m *model) handleKey(key string) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 
 	case "1":
-		m.mode = modeStreams
-		return m, nil
-	case "2":
-		m.mode = modeSubscriptions
-		return m, nil
-	case "3":
-		m.mode = modeSnapshots
-		return m, nil
-	case "4":
 		m.mode = modeCluster
 		return m, m.cluster.HealthProbeCmd()
+	case "2":
+		m.mode = modeStreams
+		return m, nil
+	case "3":
+		m.mode = modeSubscriptions
+		return m, nil
+	case "4":
+		m.mode = modeSnapshots
+		return m, nil
 
 	case "e":
 		return m, m.editSelected()

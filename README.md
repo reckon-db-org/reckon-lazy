@@ -32,11 +32,12 @@ Adaptive: three columns at ≥100 wide, two at 80-99 (parent breadcrumbed), one 
 
 | # | Mode | Columns | Status |
 |---|---|---|---|
-| 1 | streams | streams → events → event detail | ✅ |
-| 2 | subscriptions | subs → checkpoint/lag → metadata | ⬜ stub |
-| 3 | snapshots | streams → versions → data | ⬜ stub |
+| 1 | cluster | stores → nodes (★ leader) → node detail + cluster banner | ✅ |
+| 2 | streams | streams → events → event detail | ✅ |
+| 3 | subscriptions | subs → checkpoint/lag → metadata | ⬜ stub |
+| 4 | snapshots | streams → versions → data | ⬜ stub |
 
-Subs and snaps land as the [reckon-go](https://codeberg.org/reckon-db-org/reckon-go) SDK gains the underlying wrappers. The mode strip works end-to-end against the stubs today.
+Boot lands on **cluster** so the first thing you see is whether the cluster is healthy (leader, quorum, term, failed nodes). Drill into data with `2`. Subs and snaps land as the [reckon-go](https://codeberg.org/reckon-db-org/reckon-go) SDK gains the underlying wrappers.
 
 ## Keys
 
@@ -45,7 +46,7 @@ Subs and snaps land as the [reckon-go](https://codeberg.org/reckon-db-org/reckon
 | `j` / `k` (or `↓`/`↑`) | Move within focused column |
 | `h` / `l` (or `←`/`→` / `enter`) | Ascend / descend the hierarchy |
 | `g` / `G` | Jump to top / bottom of focused column |
-| `1` – `3` | Switch mode |
+| `1` – `4` | Switch mode (1=cluster, 2=streams, 3=subs, 4=snaps) |
 | `e` | Open selected event in `$EDITOR` (read-only) |
 | `q` / `ctrl+c` | Quit |
 
