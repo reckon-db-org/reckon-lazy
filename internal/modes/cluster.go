@@ -125,6 +125,17 @@ func (s *clusterStoresCol) View(w, h int, active bool) string {
 		return emptyHint("discovering stores…")
 	}
 
+	// Pad ids to the longest id width (so trailing chips align
+	// across rows), capped at w-12 so a long id can't squeeze
+	// the chip off-screen.
+	idW := longestLen(stores)
+	if cap := w - 12; idW > cap && cap > 0 {
+		idW = cap
+	}
+	if idW < 8 {
+		idW = 8
+	}
+
 	rows := make([]string, len(stores))
 	for i, id := range stores {
 		nodes := s.topo.NodeCountFor(id)
@@ -139,7 +150,7 @@ func (s *clusterStoresCol) View(w, h int, active bool) string {
 		}
 		rows[i] = fmt.Sprintf("%s %s %s",
 			dot,
-			padRight(id, max(8, w/2)),
+			padRight(id, idW),
 			theme.RowDim.Inline(true).Render(fmt.Sprintf("%d node(s)", nodes)),
 		)
 	}

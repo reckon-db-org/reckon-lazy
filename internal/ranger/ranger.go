@@ -133,10 +133,13 @@ func (r *Ranger) renderThree(w, h int) string {
 	// 1 char gap between columns
 	gaps := 2
 	inner := w - gaps
-	// Heavier weight on cols 1+2 (the working columns); col 0
-	// (the list) tends to be narrower.
-	c0w := inner * 22 / 100
-	c2w := inner * 38 / 100
+	// 28 / 32 / 40 split. Col 0 lists names (store / stream /
+	// subscription ids); 28% fits typical 13-20 char ids with
+	// a small trailing chip. Col 1 lists secondary entities
+	// (events / nodes); 32% fits "v1234 event_type_v1" comfortably.
+	// Col 2 (detail) gets the rest for JSON payloads.
+	c0w := inner * 28 / 100
+	c2w := inner * 40 / 100
 	c1w := inner - c0w - c2w
 	return joinHoriz(
 		r.renderCol(0, c0w, h),

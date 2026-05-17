@@ -133,6 +133,17 @@ func padRight(s string, w int) string {
 	return s + strings.Repeat(" ", w-len(s))
 }
 
+// longestLen — length of the longest string in ss, or 0 for empty.
+func longestLen(ss []string) int {
+	n := 0
+	for _, s := range ss {
+		if len(s) > n {
+			n = len(s)
+		}
+	}
+	return n
+}
+
 // humanAgo renders a duration since t in a short form.
 func humanAgo(t time.Time) string {
 	if t.IsZero() {
