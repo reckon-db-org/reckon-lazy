@@ -164,7 +164,12 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if os.Getenv("LAZYRECKON_DEBUG") != "" {
 			fmt.Fprintf(os.Stderr, "WindowSizeMsg: w=%d h=%d\n", m2.Width, m2.Height)
 		}
-		return m, nil
+		// Wipe the altscreen on every size change. The very first
+		// frame paints at h=24 (the fallback) before the real size
+		// arrives; without a clear, that frame's status-bar row
+		// retains its background colour after the body extends past
+		// it, looking like a duplicated bar.
+		return m, tea.ClearScreen
 
 	case tea.KeyMsg:
 		return m.handleKey(m2.String())
@@ -494,6 +499,13 @@ func decodeJSONOrRaw(raw []byte) any {
 // View
 
 func (m *model) View() string {
+	// Suppress the first render before the terminal size lands —
+	// otherwise we paint a 24x80 fallback that leaves stale styled
+	// rows behind when the body grows past row 24 on the real-size
+	// frame.
+	if m.width == 0 || m.height == 0 {
+		return ""
+	}
 	w := m.width
 	if w < 40 {
 		w = 80
