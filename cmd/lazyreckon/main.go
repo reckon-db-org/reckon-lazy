@@ -13,7 +13,6 @@ import (
 	"fmt"
 	"os"
 	"sort"
-	"strings"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -541,26 +540,12 @@ func (m *model) View() string {
 	if m.showHelp {
 		return ui.HelpOverlay(modeLabels[int(m.mode)], helpFor(m.mode), w, h)
 	}
-	return clampFrameHeight(frame, h)
-}
-
-// clampFrameHeight forces the rendered frame to exactly h lines.
-// Pads with blank lines if shorter; truncates if longer. Defends
-// against upstream height miscounts that otherwise leave stale
-// content on the bottom row of the altscreen.
-func clampFrameHeight(s string, h int) string {
-	lines := strings.Split(s, "\n")
-	switch {
-	case len(lines) == h:
-		return s
-	case len(lines) > h:
-		return strings.Join(lines[:h], "\n")
-	default:
-		for len(lines) < h {
-			lines = append(lines, "")
-		}
-		return strings.Join(lines, "\n")
-	}
+	// Bubbletea's altscreen renderer diff-paints by default. If a
+	// previous frame was taller, the trailing rows can stick around
+	// (visible as doubled status bars or stray border fragments).
+	// Force a clear-to-end-of-screen at the cursor-home position so
+	// every frame starts on a known-blank canvas.
+	return "\x1b[H\x1b[J" + frame
 }
 
 // statusSummary returns the right-aligned text for the status bar.
