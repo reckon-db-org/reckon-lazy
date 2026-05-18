@@ -62,6 +62,9 @@ type model struct {
 	width, height int
 
 	clock time.Time
+
+	// `?' help overlay state.
+	showHelp bool
 }
 
 func initialModel(endpoint string, c *reckon.Client) *model {
@@ -182,10 +185,20 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m *model) handleKey(key string) (tea.Model, tea.Cmd) {
+	// When the help overlay is open, ANY key dismisses it.
+	if m.showHelp {
+		m.showHelp = false
+		return m, nil
+	}
+
 	switch key {
 	case "q", "ctrl+c":
 		m.shutdown()
 		return m, tea.Quit
+
+	case "?":
+		m.showHelp = true
+		return m, nil
 
 	case "1":
 		m.mode = modeCluster
@@ -396,17 +409,85 @@ func (m *model) View() string {
 		ui.KeyHint{Key: "1-4", Action: "mode"},
 		ui.KeyHint{Key: "e", Action: "edit"},
 		ui.KeyHint{Key: "r", Action: "refresh"},
+		ui.KeyHint{Key: "?", Action: "help"},
 		ui.KeyHint{Key: "q", Action: "quit"},
 	)
 	summary := fmt.Sprintf("%s · %s", "◉", m.clock.Format("15:04:05"))
 	status := ui.StatusBar(hints, summary, w)
 
-	return lipgloss.JoinVertical(lipgloss.Left,
+	frame := lipgloss.JoinVertical(lipgloss.Left,
 		header,
 		modeBar,
 		body,
 		status,
 	)
+
+	if m.showHelp {
+		return ui.HelpOverlay(modeLabels[int(m.mode)], helpFor(m.mode), w, h)
+	}
+	return frame
+}
+
+// helpFor returns the cheatsheet sections for the active mode.
+// Shared global keys come first, then mode-specific.
+func helpFor(mode modeIdx) []ui.HelpSection {
+	global := ui.HelpSection{
+		Title: "global",
+		Bindings: []ui.HelpBinding{
+			{Keys: "1 / 2 / 3 / 4", What: "switch mode (cluster / streams / subs / snaps)"},
+			{Keys: "?", What: "toggle this help"},
+			{Keys: "q / ctrl+c", What: "quit"},
+		},
+	}
+	nav := ui.HelpSection{
+		Title: "navigation",
+		Bindings: []ui.HelpBinding{
+			{Keys: "j / k / ↓ / ↑", What: "move within focused column"},
+			{Keys: "h / l / ← / →", What: "ascend / descend within ranger"},
+			{Keys: "g / G", What: "jump to top / bottom"},
+		},
+	}
+	actions := ui.HelpSection{
+		Title: "actions",
+		Bindings: []ui.HelpBinding{
+			{Keys: "r", What: "refresh current mode's primary list"},
+			{Keys: "e", What: "open selected leaf in $EDITOR (read-only)"},
+		},
+	}
+	switch mode {
+	case modeCluster:
+		return []ui.HelpSection{
+			global, nav, actions,
+			{Title: "cluster (4-pane grid)", Bindings: []ui.HelpBinding{
+				{Keys: "tab", What: "swap focus between top (nodes) and bottom (stores) rangers"},
+				{Keys: "enter", What: "open selected store in streams mode (when stores list is focused)"},
+				{Keys: "j/k on stores", What: "switch active store; everything follows"},
+			}},
+		}
+	case modeStreams:
+		return []ui.HelpSection{
+			global, nav, actions,
+			{Title: "streams", Bindings: []ui.HelpBinding{
+				{Keys: "enter / l", What: "descend column (streams → events → detail)"},
+				{Keys: "e", What: "open event envelope + data + metadata in $EDITOR"},
+			}},
+		}
+	case modeSubscriptions:
+		return []ui.HelpSection{
+			global, nav, actions,
+			{Title: "subscriptions", Bindings: []ui.HelpBinding{
+				{Keys: "e", What: "open subscription Info struct in $EDITOR"},
+			}},
+		}
+	case modeSnapshots:
+		return []ui.HelpSection{
+			global, nav, actions,
+			{Title: "snapshots", Bindings: []ui.HelpBinding{
+				{Keys: "e", What: "open snapshot data + metadata in $EDITOR"},
+			}},
+		}
+	}
+	return []ui.HelpSection{global, nav, actions}
 }
 
 func (m *model) deriveHealth() ui.Health {

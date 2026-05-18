@@ -7,6 +7,64 @@ Versioning: [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-05-18
+
+First fully-wired release. All four modes (cluster, streams,
+subscriptions, snapshots) drive live data; refresh, help, and
+per-cursor probing round out the interaction model.
+
+### Added
+
+- **Splash profile picker** as the startup screen.
+  `$XDG_CONFIG_HOME/lazyreckon/profiles.toml` stores named
+  cluster endpoints. `n` add / `r` rename / `d` delete /
+  `t` test (5s `GetServerInfo` ping with green/red badge) /
+  enter connect. `--profile NAME` and `--endpoint host:port`
+  CLI flags skip the splash; `--save-as NAME` adds-and-connects
+  in one shot.
+- **Cluster mode** (4-pane grid, mode 1): nodes/detail on top,
+  stores/info on bottom. Bottom-left's cursor IS the model's
+  active store; moving it syncs `m.activeStore` so streams /
+  subs / snaps re-bind to the chosen store. `tab` swaps focus
+  between top and bottom rangers. Live cluster banner shows
+  status, leader, quorum, term, lag, failed nodes.
+- **Subscriptions mode** (mode 3): subs list → lag detail →
+  full Info via `SubscriptionService.{List, GetLag, Get}`.
+- **Snapshots mode** (mode 4): streams-that-have-snapshots →
+  versions (newest first) → data + anchor hash + metadata via
+  `SnapshotService.{ListAll, List, At}`.
+- **Per-cursor probe in cluster mode**: moving the store
+  cursor fires `HealthProbeCmd` immediately, no waiting for
+  the 5s tick.
+- **`r` refresh** key across all four modes (streams/subs/snaps
+  re-fetch col 0; cluster re-probes the HealthService).
+- **`?` help overlay**: mode-aware cheatsheet modal. Press
+  anything to dismiss. Replaces "remember the keys or read the
+  README".
+- **`enter` on a store in cluster** opens it in streams mode
+  (with the store bound to the streams view via rebuild).
+- **`e` editor handoff** extended to all data modes: events,
+  subscriptions, snapshots — each opens its envelope as JSON
+  in `$EDITOR` via `tea.ExecProcess` (altscreen suspended).
+
+### Changed
+
+- Cluster is now mode 1, streams mode 2, subs mode 3, snaps
+  mode 4. Boot lands on cluster so the first thing you see is
+  "is this healthy".
+- Ranger layout: 28/32/40 split (was 22/40/38) — col 0 widened
+  so 13-20 char stream ids don't get truncated at ~80-cols.
+- Stores tab dropped (was mode 5). Topology + health live in
+  the always-on header now.
+
+### Notes
+
+- Stream-id display: lazyreckon renders both user
+  (`prefix-hex`) and system (`$ns:name`) forms correctly. See
+  reckon-db's `guides/system_streams.md` for the convention.
+
+## [0.1.0] - 2026-05-17
+
 ### Changed — Ranger three-column layout (breaking)
 
 Tear out the tabs chrome. Layout is now a miller-columns view in the

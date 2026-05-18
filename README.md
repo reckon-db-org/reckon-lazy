@@ -49,8 +49,12 @@ Boot lands on **cluster** so the first thing you see is whether the cluster is h
 | `g` / `G` | Jump to top / bottom of focused column |
 | `1` – `4` | Switch mode (1=cluster, 2=streams, 3=subs, 4=snaps) |
 | `enter` (on a store in cluster) | Open the selected store in streams mode |
-| `e` | Open selected event in `$EDITOR` (read-only) |
+| `e` | Open selected event / sub / snapshot in `$EDITOR` (read-only) |
+| `r` | Refresh the active mode's primary list |
+| `?` | Toggle help overlay (mode-aware cheatsheet) |
 | `q` / `ctrl+c` | Quit |
+
+`?` is the discoverability hook — press it any time and you get the full mode-specific binding table without leaving the app.
 
 ### Editor handoff
 
