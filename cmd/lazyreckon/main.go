@@ -65,7 +65,20 @@ type model struct {
 
 	// `?' help overlay state.
 	showHelp bool
+
+	// Command bar: opens on `/' (filter) or `:' (goto).
+	cmdMode cmdMode
+	cmdBuf  string
+	cmdMsg  string // transient feedback ("no match", "filtering: …")
 }
+
+type cmdMode int
+
+const (
+	cmdNone cmdMode = iota
+	cmdFilter
+	cmdGoto
+)
 
 func initialModel(endpoint string, c *reckon.Client) *model {
 	topo := cluster.New()
@@ -191,6 +204,11 @@ func (m *model) handleKey(key string) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
+	// Command bar swallows input while open.
+	if m.cmdMode != cmdNone {
+		return m.handleCmdKey(key)
+	}
+
 	switch key {
 	case "q", "ctrl+c":
 		m.shutdown()
@@ -198,6 +216,22 @@ func (m *model) handleKey(key string) (tea.Model, tea.Cmd) {
 
 	case "?":
 		m.showHelp = true
+		return m, nil
+
+	case "/":
+		m.cmdMode = cmdFilter
+		m.cmdBuf = ""
+		m.cmdMsg = ""
+		// Apply empty filter so any previous one clears as the user starts typing.
+		if rg := m.activeRangerInclStores(); rg != nil {
+			_ = rg.SetFilter("")
+		}
+		return m, nil
+
+	case ":":
+		m.cmdMode = cmdGoto
+		m.cmdBuf = ""
+		m.cmdMsg = ""
 		return m, nil
 
 	case "1":
@@ -239,6 +273,81 @@ func (m *model) handleKey(key string) (tea.Model, tea.Cmd) {
 	}
 	m.syncDetail()
 	return m, cmd
+}
+
+// activeRangerInclStores returns the focused ranger for the current
+// mode. For modeStores, it returns whichever inner ranger has focus
+// (top = nodes, bottom = stores) so filter/goto operate on the
+// visually-focused list.
+func (m *model) activeRangerInclStores() *ranger.Ranger {
+	if m.mode == modeStores {
+		return m.stores.FocusedRanger()
+	}
+	return m.activeRanger()
+}
+
+// handleCmdKey runs while the command bar (filter or goto) is open.
+// Esc cancels and clears any in-progress filter. Enter commits.
+// Backspace edits. Printable characters append to cmdBuf.
+func (m *model) handleCmdKey(key string) (tea.Model, tea.Cmd) {
+	rg := m.activeRangerInclStores()
+	switch key {
+	case "esc", "ctrl+c":
+		if m.cmdMode == cmdFilter && rg != nil {
+			_ = rg.SetFilter("")
+			m.syncDetail()
+		}
+		m.cmdMode = cmdNone
+		m.cmdBuf = ""
+		m.cmdMsg = ""
+		return m, nil
+
+	case "enter":
+		mode := m.cmdMode
+		buf := m.cmdBuf
+		m.cmdMode = cmdNone
+		m.cmdBuf = ""
+		if mode == cmdGoto && rg != nil && buf != "" {
+			if _, hit := rg.GotoID(buf); !hit {
+				m.cmdMsg = "no match for: " + buf
+			} else {
+				m.cmdMsg = ""
+			}
+			m.syncDetail()
+		}
+		return m, nil
+
+	case "backspace":
+		if len(m.cmdBuf) > 0 {
+			m.cmdBuf = m.cmdBuf[:len(m.cmdBuf)-1]
+		}
+		if m.cmdMode == cmdFilter && rg != nil {
+			_ = rg.SetFilter(m.cmdBuf)
+			m.syncDetail()
+		}
+		return m, nil
+	}
+
+	// Printable input: append to buffer, live-apply for filter mode.
+	if isPrintable(key) {
+		m.cmdBuf += key
+		if m.cmdMode == cmdFilter && rg != nil {
+			_ = rg.SetFilter(m.cmdBuf)
+			m.syncDetail()
+		}
+	}
+	return m, nil
+}
+
+func isPrintable(k string) bool {
+	// bubbletea reports single-character keys as their literal value
+	// (e.g. "a", "/", " "), and named keys as words (e.g. "tab").
+	// Treat single-rune entries as printable.
+	if len(k) == 1 {
+		c := k[0]
+		return c >= 0x20 && c < 0x7f
+	}
+	return false
 }
 
 // jumpToStreams rebinds the streams view to store, switches mode,
@@ -407,12 +516,14 @@ func (m *model) View() string {
 	}
 	hints = append(hints,
 		ui.KeyHint{Key: "1-4", Action: "mode"},
+		ui.KeyHint{Key: "/", Action: "filter"},
+		ui.KeyHint{Key: ":", Action: "goto"},
 		ui.KeyHint{Key: "e", Action: "edit"},
 		ui.KeyHint{Key: "r", Action: "refresh"},
 		ui.KeyHint{Key: "?", Action: "help"},
 		ui.KeyHint{Key: "q", Action: "quit"},
 	)
-	summary := fmt.Sprintf("%s · %s", "◉", m.clock.Format("15:04:05"))
+	summary := m.statusSummary()
 	status := ui.StatusBar(hints, summary, w)
 
 	frame := lipgloss.JoinVertical(lipgloss.Left,
@@ -426,6 +537,22 @@ func (m *model) View() string {
 		return ui.HelpOverlay(modeLabels[int(m.mode)], helpFor(m.mode), w, h)
 	}
 	return frame
+}
+
+// statusSummary returns the right-aligned text for the status bar.
+// When the command bar is open it shows the prompt + buffer; when a
+// transient message is set it shows that; otherwise the clock.
+func (m *model) statusSummary() string {
+	switch {
+	case m.cmdMode == cmdFilter:
+		return "/" + m.cmdBuf + "▍"
+	case m.cmdMode == cmdGoto:
+		return ":goto " + m.cmdBuf + "▍"
+	case m.cmdMsg != "":
+		return m.cmdMsg
+	default:
+		return fmt.Sprintf("%s · %s", "◉", m.clock.Format("15:04:05"))
+	}
 }
 
 // helpFor returns the cheatsheet sections for the active mode.
@@ -445,6 +572,8 @@ func helpFor(mode modeIdx) []ui.HelpSection {
 			{Keys: "j / k / ↓ / ↑", What: "move within focused column"},
 			{Keys: "h / l / ← / →", What: "ascend / descend within ranger"},
 			{Keys: "g / G", What: "jump to top / bottom"},
+			{Keys: "/", What: "filter focused column (case-insensitive substring; esc clears)"},
+			{Keys: ":", What: "jump to a specific id in focused column (case-insensitive substring)"},
 		},
 	}
 	actions := ui.HelpSection{

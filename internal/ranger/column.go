@@ -28,6 +28,17 @@ type Column interface {
 	// Move shifts selection by delta (negative = up). Bounded.
 	Move(delta int)
 
+	// SetFilter applies a case-insensitive substring filter to the
+	// column's rows. Empty string clears it. Detail/render-only
+	// columns can implement as a no-op.
+	SetFilter(needle string)
+
+	// GotoID jumps selection to the row whose id matches needle
+	// (case-insensitive substring). Returns true on a hit; on miss
+	// the selection is left unchanged. List-style columns implement
+	// this; detail columns can no-op return false.
+	GotoID(needle string) bool
+
 	// View renders at (width, height). active = column is focused.
 	View(width, height int, active bool) string
 

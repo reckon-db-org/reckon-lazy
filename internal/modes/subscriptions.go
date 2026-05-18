@@ -75,6 +75,8 @@ type subListCol struct {
 	selected int
 	err      error
 	loading  bool
+	filter   string
+	visible  []int
 }
 
 func newSubListCol(api *subscriptions.Client) *subListCol {
@@ -103,17 +105,69 @@ func (s *subListCol) Selected() string {
 }
 
 func (s *subListCol) selectedInfo() (subscriptions.Info, bool) {
-	if s.selected < 0 || s.selected >= len(s.items) {
+	idx := s.visibleSelected()
+	if idx < 0 {
 		return subscriptions.Info{}, false
 	}
-	return s.items[s.selected], true
+	return s.items[idx], true
+}
+
+func (s *subListCol) visibleSelected() int {
+	if s.filter == "" {
+		if s.selected < 0 || s.selected >= len(s.items) {
+			return -1
+		}
+		return s.selected
+	}
+	if s.selected < 0 || s.selected >= len(s.visible) {
+		return -1
+	}
+	return s.visible[s.selected]
 }
 
 func (s *subListCol) Move(delta int) {
-	if len(s.items) == 0 {
+	n := len(s.items)
+	if s.filter != "" {
+		n = len(s.visible)
+	}
+	if n == 0 {
 		return
 	}
-	s.selected = clamp(s.selected+delta, 0, len(s.items)-1)
+	s.selected = clamp(s.selected+delta, 0, n-1)
+}
+
+func (s *subListCol) SetFilter(needle string) {
+	s.filter = needle
+	if needle == "" {
+		s.visible = nil
+		return
+	}
+	names := make([]string, len(s.items))
+	for i, it := range s.items {
+		names[i] = it.Name + " " + string(it.Type)
+	}
+	s.visible = filterIndices(names, needle)
+	n := len(s.visible)
+	if n == 0 {
+		s.selected = 0
+		return
+	}
+	s.selected = clamp(s.selected, 0, n-1)
+}
+
+func (s *subListCol) GotoID(needle string) bool {
+	names := make([]string, len(s.items))
+	for i, it := range s.items {
+		names[i] = it.Name
+	}
+	idx := findIndex(names, needle)
+	if idx < 0 {
+		return false
+	}
+	s.filter = ""
+	s.visible = nil
+	s.selected = idx
+	return true
 }
 
 func (s *subListCol) View(w, h int, active bool) string {
@@ -143,6 +197,16 @@ func (s *subListCol) View(w, h int, active bool) string {
 			theme.RowDim.Inline(true).Render(padRight(string(it.Type), 11)),
 			theme.RowDim.Inline(true).Render(fmt.Sprintf("ckpt %d", it.Checkpoint)),
 		)
+	}
+	if s.filter != "" {
+		filtered := make([]string, 0, len(s.visible))
+		for _, i := range s.visible {
+			filtered = append(filtered, rows[i])
+		}
+		if len(filtered) == 0 {
+			return emptyHint("no match")
+		}
+		return renderList(filtered, s.selected, w, h, active)
 	}
 	return renderList(rows, s.selected, w, h, active)
 }
@@ -229,8 +293,10 @@ func (l *subLagCol) Selected() string {
 	return l.parent
 }
 
-func (l *subLagCol) Move(int) {}
-func (l *subLagCol) Stop()    {}
+func (l *subLagCol) Move(int)              {}
+func (l *subLagCol) SetFilter(string)       {}
+func (l *subLagCol) GotoID(string) bool     { return false }
+func (l *subLagCol) Stop()                  {}
 
 func (l *subLagCol) View(w, h int, active bool) string {
 	switch {
@@ -286,6 +352,8 @@ func (i *subInfoCol) Selected() string {
 	return i.info.ID
 }
 func (i *subInfoCol) Move(int)                       {}
+func (i *subInfoCol) SetFilter(string)                {}
+func (i *subInfoCol) GotoID(string) bool              { return false }
 func (i *subInfoCol) Stop()                          {}
 func (i *subInfoCol) set(info *subscriptions.Info)   { i.info = info }
 

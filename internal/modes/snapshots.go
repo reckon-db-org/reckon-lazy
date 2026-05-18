@@ -78,6 +78,8 @@ type snapStreamsCol struct {
 	selected int
 	err      error
 	loading  bool
+	filter   string
+	visible  []int
 }
 
 func newSnapStreamsCol(api *snapshots.Client) *snapStreamsCol {
@@ -99,17 +101,60 @@ func (s *snapStreamsCol) Update(msg tea.Msg) (tea.Cmd, bool) {
 }
 
 func (s *snapStreamsCol) Selected() string {
-	if s.selected < 0 || s.selected >= len(s.items) {
+	idx := s.visibleSelected()
+	if idx < 0 {
 		return ""
 	}
-	return s.items[s.selected]
+	return s.items[idx]
+}
+
+func (s *snapStreamsCol) visibleSelected() int {
+	if s.filter == "" {
+		if s.selected < 0 || s.selected >= len(s.items) {
+			return -1
+		}
+		return s.selected
+	}
+	if s.selected < 0 || s.selected >= len(s.visible) {
+		return -1
+	}
+	return s.visible[s.selected]
 }
 
 func (s *snapStreamsCol) Move(delta int) {
-	if len(s.items) == 0 {
+	n := len(s.items)
+	if s.filter != "" {
+		n = len(s.visible)
+	}
+	if n == 0 {
 		return
 	}
-	s.selected = clamp(s.selected+delta, 0, len(s.items)-1)
+	s.selected = clamp(s.selected+delta, 0, n-1)
+}
+
+func (s *snapStreamsCol) SetFilter(needle string) {
+	s.filter = needle
+	s.visible = filterIndices(s.items, needle)
+	n := len(s.items)
+	if s.filter != "" {
+		n = len(s.visible)
+	}
+	if n == 0 {
+		s.selected = 0
+		return
+	}
+	s.selected = clamp(s.selected, 0, n-1)
+}
+
+func (s *snapStreamsCol) GotoID(needle string) bool {
+	idx := findIndex(s.items, needle)
+	if idx < 0 {
+		return false
+	}
+	s.filter = ""
+	s.visible = nil
+	s.selected = idx
+	return true
 }
 
 func (s *snapStreamsCol) View(w, h int, active bool) string {
@@ -120,6 +165,16 @@ func (s *snapStreamsCol) View(w, h int, active bool) string {
 		return errLine(s.err)
 	case len(s.items) == 0:
 		return emptyHint("no snapshots yet")
+	}
+	if s.filter != "" {
+		rows := make([]string, 0, len(s.visible))
+		for _, i := range s.visible {
+			rows = append(rows, s.items[i])
+		}
+		if len(rows) == 0 {
+			return emptyHint("no match")
+		}
+		return renderList(rows, s.selected, w, h, active)
 	}
 	return renderList(s.items, s.selected, w, h, active)
 }
@@ -238,6 +293,22 @@ func (v *snapVersionsCol) Move(delta int) {
 	v.selected = clamp(v.selected+delta, 0, len(v.items)-1)
 }
 
+// Filter / Goto on a small ordered version list aren't terribly
+// useful (the list is monotonic), so accept the calls and search by
+// version number only.
+func (v *snapVersionsCol) SetFilter(string) {}
+
+func (v *snapVersionsCol) GotoID(needle string) bool {
+	needle = strings.TrimPrefix(needle, "v")
+	for i, r := range v.items {
+		if fmt.Sprintf("%d", r.Version) == needle {
+			v.selected = i
+			return true
+		}
+	}
+	return false
+}
+
 func (v *snapVersionsCol) View(w, h int, active bool) string {
 	switch {
 	case v.parent == "":
@@ -279,6 +350,8 @@ func (d *snapDataCol) Title() string                          { return "data" }
 func (d *snapDataCol) Init() tea.Cmd                          { return nil }
 func (d *snapDataCol) Update(tea.Msg) (tea.Cmd, bool)         { return nil, false }
 func (d *snapDataCol) SetParentSelection(string) tea.Cmd      { return nil }
+func (d *snapDataCol) SetFilter(string)                       {}
+func (d *snapDataCol) GotoID(string) bool                     { return false }
 func (d *snapDataCol) Selected() string {
 	if d.rec == nil {
 		return ""

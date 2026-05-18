@@ -144,6 +144,38 @@ func longestLen(ss []string) int {
 	return n
 }
 
+// filterIndices returns the indices of items whose label contains
+// needle (case-insensitive). Empty needle returns nil (caller treats
+// this as "no filter — use the whole slice").
+func filterIndices(items []string, needle string) []int {
+	if needle == "" {
+		return nil
+	}
+	needle = strings.ToLower(needle)
+	out := make([]int, 0, len(items))
+	for i, s := range items {
+		if strings.Contains(strings.ToLower(s), needle) {
+			out = append(out, i)
+		}
+	}
+	return out
+}
+
+// findIndex returns the first index in items whose label matches
+// needle (case-insensitive substring), or -1 on miss.
+func findIndex(items []string, needle string) int {
+	if needle == "" {
+		return -1
+	}
+	needle = strings.ToLower(needle)
+	for i, s := range items {
+		if strings.Contains(strings.ToLower(s), needle) {
+			return i
+		}
+	}
+	return -1
+}
+
 // humanAgo renders a duration since t in a short form.
 func humanAgo(t time.Time) string {
 	if t.IsZero() {

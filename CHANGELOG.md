@@ -7,6 +7,41 @@ Versioning: [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-05-18
+
+### Added — `/` filter and `:` goto
+
+Two new keys for navigating long lists without scrolling:
+
+- `/<text>` opens a live, case-insensitive substring filter on the
+  focused column. Backspace edits; esc clears the filter and closes
+  the bar; enter commits the current filter (and leaves it applied).
+- `:<id>` opens a one-shot jump. Enter searches the focused column
+  for a row matching the id (case-insensitive substring; in the
+  events column it also accepts a bare version like `v42` or `42`).
+  Hit jumps and clears any in-progress filter; miss leaves the
+  cursor and shows "no match" in the status bar.
+
+Both indicators render in the right side of the status bar while open:
+
+```
+[ ... ] /sub_                    ← filter mode while typing
+[ ... ] :goto users-abc_         ← goto mode while typing
+[ ... ] no match for: orph       ← transient after a missed goto
+```
+
+Detail / info / 4-pane composite columns no-op these — they own no
+filterable rows. The store-mode top and bottom rangers each accept
+filter/goto independently based on which one is focused.
+
+### Added — interface contract: `SetFilter` / `GotoID` on Column
+
+`internal/ranger.Column` gains two methods. Every column type
+implements them; detail columns ship no-ops. List-style columns
+hold a `visible []int` index slice when a filter is active so that
+Move / Selected / View all operate on the filtered subset without
+mutating the underlying data.
+
 ## [0.3.0] - 2026-05-18
 
 ### Changed — mode 1 renamed `cluster` → `stores`, layout swapped (breaking)

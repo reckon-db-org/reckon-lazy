@@ -108,7 +108,7 @@ func (v *StoresView) HandleKey(key string) (tea.Cmd, bool) {
 		return nil, true
 	}
 	prev := v.storesCol.Selected()
-	cmd, handled := v.activeRanger().HandleKey(key)
+	cmd, handled := v.FocusedRanger().HandleKey(key)
 	if now := v.storesCol.Selected(); now != prev && now != "" {
 		cmd = tea.Batch(cmd, v.HealthProbeCmd())
 	}
@@ -186,16 +186,18 @@ func (v *StoresView) SelectedStore() string {
 	return v.storesCol.Selected()
 }
 
-// FocusedRanger — 0 = stores (top), 1 = nodes (bottom). Exposed
+// FocusedIndex — 0 = stores (top), 1 = nodes (bottom). Exposed
 // for the status bar.
-func (v *StoresView) FocusedRanger() int { return v.focused }
+func (v *StoresView) FocusedIndex() int { return v.focused }
 
 // IsStoresFocused — true when the stores ranger (top) currently
 // has focus. Use this from main.go's key handlers instead of
 // hard-coding the focus index.
 func (v *StoresView) IsStoresFocused() bool { return v.focused == 0 }
 
-func (v *StoresView) activeRanger() *ranger.Ranger {
+// FocusedRanger returns the inner ranger that currently has focus.
+// Used by the global filter/goto plumbing in main.go.
+func (v *StoresView) FocusedRanger() *ranger.Ranger {
 	if v.focused == 1 {
 		return v.nodesRanger
 	}
@@ -256,6 +258,25 @@ func (n *nodesCol) Move(delta int) {
 	n.selected = clamp(n.selected+delta, 0, len(nodes)-1)
 }
 
+// Stores mode lists are derived from live topology + tiny; filter is
+// noise. Goto by node name works.
+func (n *nodesCol) SetFilter(string) {}
+
+func (n *nodesCol) GotoID(needle string) bool {
+	if needle == "" {
+		return false
+	}
+	nodes := n.topo.NodesFor(n.getStore())
+	needle = strings.ToLower(needle)
+	for i, inst := range nodes {
+		if strings.Contains(strings.ToLower(inst.Node), needle) {
+			n.selected = i
+			return true
+		}
+	}
+	return false
+}
+
 func (n *nodesCol) View(w, h int, active bool) string {
 	store := n.getStore()
 	if store == "" {
@@ -312,6 +333,8 @@ func (d *nodeDetailCol) Selected() string {
 	return d.node.Node
 }
 func (d *nodeDetailCol) Move(int)                       {}
+func (d *nodeDetailCol) SetFilter(string)                {}
+func (d *nodeDetailCol) GotoID(string) bool              { return false }
 func (d *nodeDetailCol) Stop()                          {}
 func (d *nodeDetailCol) setNode(n *stores.Instance)     { d.node = n }
 
@@ -409,6 +432,30 @@ func (s *storesCol) Move(delta int) {
 	}
 }
 
+// Tiny topology-derived list; filter would just hide stores from the
+// dashboard. Goto by store id substring works.
+func (s *storesCol) SetFilter(string) {}
+
+func (s *storesCol) GotoID(needle string) bool {
+	if needle == "" {
+		return false
+	}
+	all := s.topo.Stores()
+	needle = strings.ToLower(needle)
+	for _, id := range all {
+		if strings.Contains(strings.ToLower(id), needle) {
+			if id != s.selectedID {
+				s.selectedID = id
+				if s.setStore != nil {
+					s.setStore(id)
+				}
+			}
+			return true
+		}
+	}
+	return false
+}
+
 func (s *storesCol) View(w, h int, active bool) string {
 	all := s.topo.Stores()
 	if len(all) == 0 {
@@ -474,6 +521,8 @@ func (i *storeInfoCol) Update(tea.Msg) (tea.Cmd, bool)    { return nil, false }
 func (i *storeInfoCol) SetParentSelection(string) tea.Cmd { return nil }
 func (i *storeInfoCol) Selected() string                  { return i.getStore() }
 func (i *storeInfoCol) Move(int)                          {}
+func (i *storeInfoCol) SetFilter(string)                   {}
+func (i *storeInfoCol) GotoID(string) bool                 { return false }
 func (i *storeInfoCol) Stop()                             {}
 
 func (i *storeInfoCol) View(w, h int, active bool) string {

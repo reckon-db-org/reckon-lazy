@@ -107,6 +107,26 @@ func (r *Ranger) propagate() tea.Cmd {
 // Focused — current focus index.
 func (r *Ranger) Focused() int { return r.focus }
 
+// SetFilter applies (or clears, when needle == "") a case-insensitive
+// substring filter on the focused column. Selection in downstream
+// columns is re-propagated so detail panes follow the new selection.
+func (r *Ranger) SetFilter(needle string) tea.Cmd {
+	r.cols[r.focus].SetFilter(needle)
+	return r.propagate()
+}
+
+// GotoID jumps the focused column's selection to the row whose id
+// matches needle (case-insensitive substring). Returns true on hit;
+// on miss the selection is left unchanged. A hit propagates parent →
+// child selection through the rest of the ranger.
+func (r *Ranger) GotoID(needle string) (tea.Cmd, bool) {
+	hit := r.cols[r.focus].GotoID(needle)
+	if !hit {
+		return nil, false
+	}
+	return r.propagate(), true
+}
+
 // FocusedSelection — id of the row currently highlighted in the
 // focused column.
 func (r *Ranger) FocusedSelection() string {

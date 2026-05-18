@@ -74,6 +74,8 @@ type streamListCol struct {
 	selected int
 	err      error
 	loading  bool
+	filter   string
+	visible  []int // populated when filter != ""
 }
 
 func newStreamListCol(api *streams.Client) *streamListCol {
@@ -96,17 +98,65 @@ func (s *streamListCol) Update(msg tea.Msg) (tea.Cmd, bool) {
 func (s *streamListCol) SetParentSelection(string) tea.Cmd { return nil }
 
 func (s *streamListCol) Selected() string {
-	if s.selected < 0 || s.selected >= len(s.items) {
+	idx := s.visibleSelected()
+	if idx < 0 {
 		return ""
 	}
-	return s.items[s.selected]
+	return s.items[idx]
+}
+
+// visibleSelected returns the row index *into s.items* for the
+// currently-highlighted entry, or -1 if the list is empty or the
+// selection is out of range.
+func (s *streamListCol) visibleSelected() int {
+	if s.filter == "" {
+		if s.selected < 0 || s.selected >= len(s.items) {
+			return -1
+		}
+		return s.selected
+	}
+	if s.selected < 0 || s.selected >= len(s.visible) {
+		return -1
+	}
+	return s.visible[s.selected]
 }
 
 func (s *streamListCol) Move(delta int) {
-	if len(s.items) == 0 {
+	n := len(s.items)
+	if s.filter != "" {
+		n = len(s.visible)
+	}
+	if n == 0 {
 		return
 	}
-	s.selected = clamp(s.selected+delta, 0, len(s.items)-1)
+	s.selected = clamp(s.selected+delta, 0, n-1)
+}
+
+func (s *streamListCol) SetFilter(needle string) {
+	s.filter = needle
+	s.visible = filterIndices(s.items, needle)
+	n := len(s.items)
+	if s.filter != "" {
+		n = len(s.visible)
+	}
+	if n == 0 {
+		s.selected = 0
+		return
+	}
+	s.selected = clamp(s.selected, 0, n-1)
+}
+
+func (s *streamListCol) GotoID(needle string) bool {
+	idx := findIndex(s.items, needle)
+	if idx < 0 {
+		return false
+	}
+	// Clear filter — goto trumps it. (Otherwise the target may be
+	// invisible behind the filter.)
+	s.filter = ""
+	s.visible = nil
+	s.selected = idx
+	return true
 }
 
 func (s *streamListCol) View(w, h int, active bool) string {
@@ -118,7 +168,22 @@ func (s *streamListCol) View(w, h int, active bool) string {
 	case len(s.items) == 0:
 		return emptyHint("no streams yet")
 	}
-	return renderList(s.items, s.selected, w, h, active)
+	rows, sel := s.viewRows()
+	if len(rows) == 0 {
+		return emptyHint("no match")
+	}
+	return renderList(rows, sel, w, h, active)
+}
+
+func (s *streamListCol) viewRows() ([]string, int) {
+	if s.filter == "" {
+		return s.items, s.selected
+	}
+	rows := make([]string, 0, len(s.visible))
+	for _, i := range s.visible {
+		rows = append(rows, s.items[i])
+	}
+	return rows, s.selected
 }
 
 func (s *streamListCol) Stop() {}
@@ -151,6 +216,8 @@ type eventListCol struct {
 	selected int
 	loading  bool
 	err      error
+	filter   string
+	visible  []int
 }
 
 func newEventListCol(api *streams.Client) *eventListCol {
@@ -209,17 +276,83 @@ func (e *eventListCol) Selected() string {
 }
 
 func (e *eventListCol) selectedEvent() (streams.RecordedEvent, bool) {
-	if e.selected < 0 || e.selected >= len(e.events) {
+	idx := e.visibleSelected()
+	if idx < 0 {
 		return streams.RecordedEvent{}, false
 	}
-	return e.events[e.selected], true
+	return e.events[idx], true
+}
+
+func (e *eventListCol) visibleSelected() int {
+	if e.filter == "" {
+		if e.selected < 0 || e.selected >= len(e.events) {
+			return -1
+		}
+		return e.selected
+	}
+	if e.selected < 0 || e.selected >= len(e.visible) {
+		return -1
+	}
+	return e.visible[e.selected]
 }
 
 func (e *eventListCol) Move(delta int) {
-	if len(e.events) == 0 {
+	n := len(e.events)
+	if e.filter != "" {
+		n = len(e.visible)
+	}
+	if n == 0 {
 		return
 	}
-	e.selected = clamp(e.selected+delta, 0, len(e.events)-1)
+	e.selected = clamp(e.selected+delta, 0, n-1)
+}
+
+// labelsAll renders every event as a list label (matches View).
+func (e *eventListCol) labelsAll(w int) []string {
+	labels := make([]string, len(e.events))
+	for i, ev := range e.events {
+		labels[i] = fmt.Sprintf("v%-4d %s", ev.Version, truncate(ev.EventType, w-8))
+	}
+	return labels
+}
+
+func (e *eventListCol) SetFilter(needle string) {
+	e.filter = needle
+	if needle == "" {
+		e.visible = nil
+		return
+	}
+	// Filter against (version, event_type) — what the user sees.
+	all := e.labelsAll(80)
+	e.visible = filterIndices(all, needle)
+	n := len(e.visible)
+	if n == 0 {
+		e.selected = 0
+		return
+	}
+	e.selected = clamp(e.selected, 0, n-1)
+}
+
+func (e *eventListCol) GotoID(needle string) bool {
+	// Two flavours: exact version ("v42" or "42") or event id substring.
+	for i, ev := range e.events {
+		idStr := fmt.Sprintf("%d", ev.Version)
+		if idStr == needle || idStr == strings.TrimPrefix(needle, "v") {
+			e.filter = ""
+			e.visible = nil
+			e.selected = i
+			return true
+		}
+	}
+	all := e.labelsAll(120)
+	idx := findIndex(all, needle)
+	if idx < 0 {
+		return false
+	}
+	e.filter = ""
+	e.visible = nil
+	e.selected = idx
+	return true
 }
 
 func (e *eventListCol) View(w, h int, active bool) string {
@@ -233,9 +366,16 @@ func (e *eventListCol) View(w, h int, active bool) string {
 	case len(e.events) == 0:
 		return emptyHint("(empty stream)")
 	}
-	labels := make([]string, len(e.events))
-	for i, ev := range e.events {
-		labels[i] = fmt.Sprintf("v%-4d %s", ev.Version, truncate(ev.EventType, w-8))
+	labels := e.labelsAll(w)
+	if e.filter != "" {
+		rows := make([]string, 0, len(e.visible))
+		for _, i := range e.visible {
+			rows = append(rows, labels[i])
+		}
+		if len(rows) == 0 {
+			return emptyHint("no match")
+		}
+		return renderList(rows, e.selected, w, h, active)
 	}
 	return renderList(labels, e.selected, w, h, active)
 }
@@ -261,6 +401,8 @@ func (e *eventDetailCol) Init() tea.Cmd                           { return nil }
 func (e *eventDetailCol) Update(tea.Msg) (tea.Cmd, bool)          { return nil, false }
 func (e *eventDetailCol) SetParentSelection(string) tea.Cmd       { return nil }
 func (e *eventDetailCol) Move(int)                                {}
+func (e *eventDetailCol) SetFilter(string)                        {}
+func (e *eventDetailCol) GotoID(string) bool                      { return false }
 func (e *eventDetailCol) Stop()                                   {}
 func (e *eventDetailCol) set(ev *streams.RecordedEvent)           { e.source = ev }
 func (e *eventDetailCol) Selected() string {
