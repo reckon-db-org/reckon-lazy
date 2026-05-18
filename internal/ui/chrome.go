@@ -70,29 +70,63 @@ func shortNode(s string) string {
 }
 
 // ModeStrip renders the bottom mode selector. Active mode shows in
-// Horus green; others muted.
+// Horus green; others muted. On a narrow terminal labels collapse
+// to "1 2 3 4" (number-only) so the strip always fits one line.
 func ModeStrip(labels []string, active, width int) string {
-	parts := make([]string, 0, len(labels)*2)
+	row := renderModeStrip(labels, active, false)
+	if lipgloss.Width(row) > width {
+		row = renderModeStrip(labels, active, true)
+	}
+	// Hard-truncate as a last resort (very small terminals).
+	if w := lipgloss.Width(row); w > width {
+		return row // let it overflow rather than break ANSI codes mid-byte
+	}
+	gap := width - lipgloss.Width(row)
+	return row + theme.TabGap.Render(strings.Repeat(" ", gap))
+}
+
+func renderModeStrip(labels []string, active int, compact bool) string {
+	parts := make([]string, 0, len(labels))
 	for i, label := range labels {
-		text := fmt.Sprintf(" %d %s ", i+1, label)
+		var text string
+		if compact {
+			text = fmt.Sprintf(" %d ", i+1)
+			_ = label
+		} else {
+			text = fmt.Sprintf(" %d %s ", i+1, label)
+		}
 		if i == active {
 			parts = append(parts, theme.TabActive.Render(text))
 		} else {
 			parts = append(parts, theme.TabInactive.Render(text))
 		}
 	}
-	row := lipgloss.JoinHorizontal(lipgloss.Top, parts...)
-
-	gap := width - lipgloss.Width(row)
-	if gap < 0 {
-		gap = 0
-	}
-	return row + theme.TabGap.Render(strings.Repeat(" ", gap))
+	return lipgloss.JoinHorizontal(lipgloss.Top, parts...)
 }
 
 // StatusBar renders the bottom-most line: keymap hints + right-aligned
-// summary (e.g. clock).
+// summary (e.g. clock). Drops hints from the right (lowest priority
+// last) until everything fits one line — never wraps.
 func StatusBar(keys []KeyHint, summary string, width int) string {
+	right := theme.StatusBar.Render(summary)
+	rightW := lipgloss.Width(right)
+
+	left, leftW := renderHints(keys)
+
+	// Drop hints from the end until left + 1 (gap) + right fits.
+	for len(keys) > 0 && leftW+1+rightW > width {
+		keys = keys[:len(keys)-1]
+		left, leftW = renderHints(keys)
+	}
+
+	gap := width - leftW - rightW
+	if gap < 1 {
+		gap = 1
+	}
+	return left + theme.StatusBar.Render(strings.Repeat(" ", gap)) + right
+}
+
+func renderHints(keys []KeyHint) (string, int) {
 	var b strings.Builder
 	for i, h := range keys {
 		if i > 0 {
@@ -101,14 +135,8 @@ func StatusBar(keys []KeyHint, summary string, width int) string {
 		b.WriteString(theme.StatusKey.Render(h.Key))
 		b.WriteString(theme.StatusBar.Render(" " + h.Action))
 	}
-	left := b.String()
-	right := theme.StatusBar.Render(summary)
-
-	gap := width - lipgloss.Width(left) - lipgloss.Width(right)
-	if gap < 1 {
-		gap = 1
-	}
-	return left + theme.StatusBar.Render(strings.Repeat(" ", gap)) + right
+	s := b.String()
+	return s, lipgloss.Width(s)
 }
 
 // KeyHint is one "key → action" pair shown in the status bar.
