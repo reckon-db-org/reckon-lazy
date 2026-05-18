@@ -35,13 +35,13 @@ import (
 type modeIdx int
 
 const (
-	modeCluster modeIdx = iota
+	modeStores modeIdx = iota
 	modeStreams
 	modeSubscriptions
 	modeSnapshots
 )
 
-var modeLabels = []string{"cluster", "streams", "subscriptions", "snapshots"}
+var modeLabels = []string{"stores", "streams", "subscriptions", "snapshots"}
 
 type model struct {
 	endpoint string
@@ -57,7 +57,7 @@ type model struct {
 	streams *modes.StreamsView
 	subs    *modes.SubscriptionsView
 	snaps   *modes.SnapshotsView
-	cluster *modes.ClusterView
+	stores  *modes.StoresView
 
 	width, height int
 
@@ -74,13 +74,13 @@ func initialModel(endpoint string, c *reckon.Client) *model {
 		client:      c,
 		topology:    topo,
 		activeStore: "default_store",
-		mode:        modeCluster,
+		mode:        modeStores,
 		clock:       time.Now(),
 	}
 	m.streams = modes.BuildStreams(c, m.activeStore)
 	m.subs = modes.BuildSubscriptions(c, m.activeStore)
 	m.snaps = modes.BuildSnapshots(c, m.activeStore)
-	m.cluster = modes.BuildCluster(c, topo, m.activeStore, m.setActiveStore)
+	m.stores = modes.BuildStores(c, topo, m.activeStore, m.setActiveStore)
 	return m
 }
 
@@ -95,7 +95,7 @@ func (m *model) setActiveStore(store string) {
 
 // activeRanger returns the *Ranger for the modes that are simple
 // rangers. Cluster mode is special (composite of two rangers); for
-// it, handleKey/Update/View route directly through m.cluster.
+// it, handleKey/Update/View route directly through m.stores.
 func (m *model) activeRanger() *ranger.Ranger {
 	switch m.mode {
 	case modeSubscriptions:
@@ -115,8 +115,8 @@ func (m *model) syncDetail() {
 		m.subs.SyncDetail()
 	case modeSnapshots:
 		m.snaps.SyncDetail()
-	case modeCluster:
-		m.cluster.SyncDetail()
+	case modeStores:
+		m.stores.SyncDetail()
 	}
 }
 
@@ -131,7 +131,7 @@ func (m *model) Init() tea.Cmd {
 		m.streams.Ranger.Init(),
 		m.subs.Ranger.Init(),
 		m.snaps.Ranger.Init(),
-		m.cluster.Init(),
+		m.stores.Init(),
 	}
 	return tea.Batch(cmds...)
 }
@@ -162,8 +162,8 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Re-arm and, if we're in cluster mode, kick a probe for
 		// the selected store now that topology may have new nodes.
 		probe := tea.Cmd(nil)
-		if m.mode == modeCluster {
-			probe = m.cluster.HealthProbeCmd()
+		if m.mode == modeStores {
+			probe = m.stores.HealthProbeCmd()
 		}
 		return m, tea.Batch(m.watchStoresPollCmd(m2.events_ch, m2.errs_ch), probe)
 
@@ -175,8 +175,8 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// Fan the message through the active mode. Cluster has its own
 	// Update (it owns a 4-pane composite, not a single ranger).
 	var cmd tea.Cmd
-	if m.mode == modeCluster {
-		cmd = m.cluster.Update(msg)
+	if m.mode == modeStores {
+		cmd = m.stores.Update(msg)
 	} else {
 		cmd = m.activeRanger().Update(msg)
 	}
@@ -201,8 +201,8 @@ func (m *model) handleKey(key string) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case "1":
-		m.mode = modeCluster
-		return m, m.cluster.HealthProbeCmd()
+		m.mode = modeStores
+		return m, m.stores.HealthProbeCmd()
 	case "2":
 		m.mode = modeStreams
 		return m, nil
@@ -217,10 +217,10 @@ func (m *model) handleKey(key string) (tea.Model, tea.Cmd) {
 		// In cluster mode with the stores ranger focused on its
 		// list column, enter is "open this store in streams mode".
 		// Elsewhere enter falls through to ranger semantics (= l).
-		if m.mode == modeCluster &&
-			m.cluster.FocusedRanger() == 1 &&
-			m.cluster.SelectedStore() != "" {
-			return m, m.jumpToStreams(m.cluster.SelectedStore())
+		if m.mode == modeStores &&
+			m.stores.IsStoresFocused() &&
+			m.stores.SelectedStore() != "" {
+			return m, m.jumpToStreams(m.stores.SelectedStore())
 		}
 
 	case "e":
@@ -232,8 +232,8 @@ func (m *model) handleKey(key string) (tea.Model, tea.Cmd) {
 
 	// Delegate the rest to the active mode.
 	var cmd tea.Cmd
-	if m.mode == modeCluster {
-		cmd, _ = m.cluster.HandleKey(key)
+	if m.mode == modeStores {
+		cmd, _ = m.stores.HandleKey(key)
 	} else {
 		cmd, _ = m.activeRanger().HandleKey(key)
 	}
@@ -265,8 +265,8 @@ func (m *model) refresh() tea.Cmd {
 		return m.subs.Refresh()
 	case modeSnapshots:
 		return m.snaps.Refresh()
-	case modeCluster:
-		return m.cluster.HealthProbeCmd()
+	case modeStores:
+		return m.stores.HealthProbeCmd()
 	}
 	return nil
 }
@@ -392,8 +392,8 @@ func (m *model) View() string {
 
 	bodyH := h - 4 // header + modebar + statusbar + 1 padding line
 	var body string
-	if m.mode == modeCluster {
-		body = m.cluster.View(w, bodyH)
+	if m.mode == modeStores {
+		body = m.stores.View(w, bodyH)
 	} else {
 		body = m.activeRanger().View(w, bodyH)
 	}
@@ -402,7 +402,7 @@ func (m *model) View() string {
 		{Key: "j/k", Action: "move"},
 		{Key: "h/l", Action: "in/out"},
 	}
-	if m.mode == modeCluster {
+	if m.mode == modeStores {
 		hints = append(hints, ui.KeyHint{Key: "tab", Action: "swap rangers"})
 	}
 	hints = append(hints,
@@ -455,10 +455,10 @@ func helpFor(mode modeIdx) []ui.HelpSection {
 		},
 	}
 	switch mode {
-	case modeCluster:
+	case modeStores:
 		return []ui.HelpSection{
 			global, nav, actions,
-			{Title: "cluster (4-pane grid)", Bindings: []ui.HelpBinding{
+			{Title: "stores (4-pane grid)", Bindings: []ui.HelpBinding{
 				{Keys: "tab", What: "swap focus between top (nodes) and bottom (stores) rangers"},
 				{Keys: "enter", What: "open selected store in streams mode (when stores list is focused)"},
 				{Keys: "j/k on stores", What: "switch active store; everything follows"},
@@ -573,7 +573,7 @@ func (m *model) shutdown() {
 	m.streams.Ranger.Stop()
 	m.subs.Ranger.Stop()
 	m.snaps.Ranger.Stop()
-	m.cluster.Stop()
+	m.stores.Stop()
 	_ = m.client.Close()
 }
 

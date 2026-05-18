@@ -17,7 +17,7 @@ import (
 	"codeberg.org/reckon-db-org/reckon-lazy/internal/theme"
 )
 
-// ClusterView is a 4-pane grid built from two stacked 2-pane rangers:
+// StoresView is a 4-pane grid built from two stacked 2-pane rangers:
 //
 //   ┌──────────────┬──────────────┐
 //   │ nodes        │ node detail  │   ← top ranger
@@ -31,35 +31,35 @@ import (
 //
 // tab switches between the two rangers; h/l switches L/R within the
 // focused ranger; j/k moves within the focused column.
-type ClusterView struct {
+type StoresView struct {
 	client *reckon.Client
 	topo   *cluster.Topology
 
-	topRanger    *ranger.Ranger
-	nodesCol     *clusterNodesCol
-	nodeDetail   *clusterNodeDetailCol
+	storesRanger    *ranger.Ranger
+	nodesCol     *nodesCol
+	nodeDetail   *nodeDetailCol
 
-	bottomRanger *ranger.Ranger
-	storesCol    *clusterStoresCol
-	storeInfo    *clusterStoreInfoCol
+	nodesRanger *ranger.Ranger
+	storesCol    *storesCol
+	storeInfo    *storeInfoCol
 
 	focused int // 0 = top, 1 = bottom
 
 	probing string // store id currently being probed
 }
 
-// BuildCluster wires the 4-pane cluster mode against the shared
+// BuildStores wires the 4-pane cluster mode against the shared
 // topology and an initial active store. The setStore callback is
 // invoked whenever the user's bottom-row cursor commits to a new
 // store; main updates m.activeStore so streams/subs/snaps stay in
 // sync.
-func BuildCluster(c *reckon.Client, topo *cluster.Topology, initialStore string, setStore func(string)) *ClusterView {
-	v := &ClusterView{client: c, topo: topo}
+func BuildStores(c *reckon.Client, topo *cluster.Topology, initialStore string, setStore func(string)) *StoresView {
+	v := &StoresView{client: c, topo: topo}
 
 	// Forward declaration: the columns need a getter that returns
-	// the bottom-left's current selection. We can't construct that
-	// before storesCol exists, so we close over v and read
-	// storesCol once it's set.
+	// the active store, which is whatever the storesCol cursor is
+	// pointing at. We can't construct that before storesCol exists,
+	// so we close over v and read storesCol once it's set.
 	getStore := func() string {
 		if v.storesCol == nil {
 			return initialStore
@@ -70,31 +70,35 @@ func BuildCluster(c *reckon.Client, topo *cluster.Topology, initialStore string,
 		return initialStore
 	}
 
-	v.nodesCol = newClusterNodesCol(topo, getStore)
-	v.nodeDetail = newClusterNodeDetailCol(topo, getStore)
-	v.topRanger = ranger.New2(v.nodesCol, v.nodeDetail)
+	// Top ranger: stores list + per-store cluster banner. This is
+	// the primary scope selector — your first decision when you
+	// enter the mode is "which store am I looking at".
+	v.storesCol = newStoresCol(topo, initialStore, setStore)
+	v.storeInfo = newStoreInfoCol(topo, getStore)
+	v.storesRanger = ranger.New2(v.storesCol, v.storeInfo)
 
-	v.storesCol = newClusterStoresCol(topo, initialStore, setStore)
-	v.storeInfo = newClusterStoreInfoCol(topo, getStore)
-	v.bottomRanger = ranger.New2(v.storesCol, v.storeInfo)
+	// Bottom ranger: nodes hosting the selected store + per-node
+	// detail. Drilled from the top.
+	v.nodesCol = newNodesCol(topo, getStore)
+	v.nodeDetail = newNodeDetailCol(topo, getStore)
+	v.nodesRanger = ranger.New2(v.nodesCol, v.nodeDetail)
 
-	// Start with bottom ranger focused so the user's first
-	// j/k touches the stores list — picking the store you want to
-	// inspect is usually the first thing.
-	v.focused = 1
+	// Start with the stores ranger (top) focused so the user's first
+	// j/k touches the store selector — that's the primary decision.
+	v.focused = 0
 	return v
 }
 
-func (v *ClusterView) Init() tea.Cmd {
-	return tea.Batch(v.topRanger.Init(), v.bottomRanger.Init())
+func (v *StoresView) Init() tea.Cmd {
+	return tea.Batch(v.storesRanger.Init(), v.nodesRanger.Init())
 }
 
 // HandleKey processes a navigation key. tab switches rangers;
-// other keys delegate to the focused ranger. If the bottom-left
+// other keys delegate to the focused ranger. If the top-left
 // store cursor commits to a different store, a fresh probe fires
 // immediately (otherwise the cluster banner would stay stale until
 // the 5s tick).
-func (v *ClusterView) HandleKey(key string) (tea.Cmd, bool) {
+func (v *StoresView) HandleKey(key string) (tea.Cmd, bool) {
 	switch key {
 	case "tab":
 		v.focused = (v.focused + 1) % 2
@@ -113,7 +117,7 @@ func (v *ClusterView) HandleKey(key string) (tea.Cmd, bool) {
 
 // Update fans the message through both rangers + handles
 // healthProbeMsg/healthTickMsg at this level.
-func (v *ClusterView) Update(msg tea.Msg) tea.Cmd {
+func (v *StoresView) Update(msg tea.Msg) tea.Cmd {
 	switch m := msg.(type) {
 	case healthProbeMsg:
 		v.topo.PutHealth(m.storeID, m.health)
@@ -124,11 +128,11 @@ func (v *ClusterView) Update(msg tea.Msg) tea.Cmd {
 	case healthTickMsg:
 		return tea.Batch(v.HealthProbeCmd(), healthTick())
 	}
-	return tea.Batch(v.topRanger.Update(msg), v.bottomRanger.Update(msg))
+	return tea.Batch(v.storesRanger.Update(msg), v.nodesRanger.Update(msg))
 }
 
 // SyncDetail copies col selections into the detail columns.
-func (v *ClusterView) SyncDetail() {
+func (v *StoresView) SyncDetail() {
 	if ev, ok := v.nodesCol.selectedNode(); ok {
 		v.nodeDetail.setNode(&ev)
 	} else {
@@ -139,22 +143,22 @@ func (v *ClusterView) SyncDetail() {
 // View renders the 4-pane grid at (width, height). Splits height
 // 50/50 between top and bottom; each ranger handles its own L/R
 // split via the ranger code.
-func (v *ClusterView) View(width, height int) string {
+func (v *StoresView) View(width, height int) string {
 	topH := height / 2
 	botH := height - topH
-	top := v.topRanger.View(width, topH)
-	bot := v.bottomRanger.View(width, botH)
+	top := v.storesRanger.View(width, topH)
+	bot := v.nodesRanger.View(width, botH)
 	return lipgloss.JoinVertical(lipgloss.Left, top, bot)
 }
 
-func (v *ClusterView) Stop() {
-	v.topRanger.Stop()
-	v.bottomRanger.Stop()
+func (v *StoresView) Stop() {
+	v.storesRanger.Stop()
+	v.nodesRanger.Stop()
 }
 
 // HealthProbeCmd fires a probe for the active store. Called on
 // mode entry, on the 5s tick, and after topology changes.
-func (v *ClusterView) HealthProbeCmd() tea.Cmd {
+func (v *StoresView) HealthProbeCmd() tea.Cmd {
 	storeID := ""
 	if v.storesCol != nil {
 		storeID = v.storesCol.Selected()
@@ -171,41 +175,48 @@ func (v *ClusterView) HealthProbeCmd() tea.Cmd {
 	}
 }
 
-// SelectedStore — id of the bottom-left's current selection. Used
-// by main.go to keep m.activeStore in lockstep after the cluster
-// mode runs its key handling.
-func (v *ClusterView) SelectedStore() string {
+// SelectedStore — id of the top-left's current selection. Used by
+// main.go to keep m.activeStore in lockstep after the stores mode
+// runs its key handling, and as the target for `enter' → jump to
+// streams mode.
+func (v *StoresView) SelectedStore() string {
 	if v.storesCol == nil {
 		return ""
 	}
 	return v.storesCol.Selected()
 }
 
-// FocusedRanger — 0 = top, 1 = bottom. Exposed for the status bar.
-func (v *ClusterView) FocusedRanger() int { return v.focused }
+// FocusedRanger — 0 = stores (top), 1 = nodes (bottom). Exposed
+// for the status bar.
+func (v *StoresView) FocusedRanger() int { return v.focused }
 
-func (v *ClusterView) activeRanger() *ranger.Ranger {
+// IsStoresFocused — true when the stores ranger (top) currently
+// has focus. Use this from main.go's key handlers instead of
+// hard-coding the focus index.
+func (v *StoresView) IsStoresFocused() bool { return v.focused == 0 }
+
+func (v *StoresView) activeRanger() *ranger.Ranger {
 	if v.focused == 1 {
-		return v.bottomRanger
+		return v.nodesRanger
 	}
-	return v.topRanger
+	return v.storesRanger
 }
 
 //------------------------------------------------------------------------------
 // Top-left — nodes hosting the active store
 
-type clusterNodesCol struct {
+type nodesCol struct {
 	topo     *cluster.Topology
 	getStore func() string
 	selected int
 	lastSeen string
 }
 
-func newClusterNodesCol(topo *cluster.Topology, getStore func() string) *clusterNodesCol {
-	return &clusterNodesCol{topo: topo, getStore: getStore}
+func newNodesCol(topo *cluster.Topology, getStore func() string) *nodesCol {
+	return &nodesCol{topo: topo, getStore: getStore}
 }
 
-func (n *clusterNodesCol) Title() string {
+func (n *nodesCol) Title() string {
 	store := n.getStore()
 	if store == "" {
 		return "nodes"
@@ -213,18 +224,18 @@ func (n *clusterNodesCol) Title() string {
 	return "nodes · " + truncate(store, 22)
 }
 
-func (n *clusterNodesCol) Init() tea.Cmd                     { return nil }
-func (n *clusterNodesCol) Update(tea.Msg) (tea.Cmd, bool)    { return nil, false }
-func (n *clusterNodesCol) SetParentSelection(string) tea.Cmd { return nil }
+func (n *nodesCol) Init() tea.Cmd                     { return nil }
+func (n *nodesCol) Update(tea.Msg) (tea.Cmd, bool)    { return nil, false }
+func (n *nodesCol) SetParentSelection(string) tea.Cmd { return nil }
 
-func (n *clusterNodesCol) Selected() string {
+func (n *nodesCol) Selected() string {
 	if ev, ok := n.selectedNode(); ok {
 		return ev.Node
 	}
 	return ""
 }
 
-func (n *clusterNodesCol) selectedNode() (stores.Instance, bool) {
+func (n *nodesCol) selectedNode() (stores.Instance, bool) {
 	store := n.getStore()
 	if n.lastSeen != store {
 		n.selected = 0
@@ -237,7 +248,7 @@ func (n *clusterNodesCol) selectedNode() (stores.Instance, bool) {
 	return nodes[n.selected], true
 }
 
-func (n *clusterNodesCol) Move(delta int) {
+func (n *nodesCol) Move(delta int) {
 	nodes := n.topo.NodesFor(n.getStore())
 	if len(nodes) == 0 {
 		return
@@ -245,7 +256,7 @@ func (n *clusterNodesCol) Move(delta int) {
 	n.selected = clamp(n.selected+delta, 0, len(nodes)-1)
 }
 
-func (n *clusterNodesCol) View(w, h int, active bool) string {
+func (n *nodesCol) View(w, h int, active bool) string {
 	store := n.getStore()
 	if store == "" {
 		return emptyHint("no active store")
@@ -275,36 +286,36 @@ func (n *clusterNodesCol) View(w, h int, active bool) string {
 	return renderList(rows, n.selected, w, h, active)
 }
 
-func (n *clusterNodesCol) Stop() {}
+func (n *nodesCol) Stop() {}
 
 //------------------------------------------------------------------------------
 // Top-right — node detail (per-instance)
 
-type clusterNodeDetailCol struct {
+type nodeDetailCol struct {
 	topo     *cluster.Topology
 	getStore func() string
 	node     *stores.Instance
 }
 
-func newClusterNodeDetailCol(topo *cluster.Topology, getStore func() string) *clusterNodeDetailCol {
-	return &clusterNodeDetailCol{topo: topo, getStore: getStore}
+func newNodeDetailCol(topo *cluster.Topology, getStore func() string) *nodeDetailCol {
+	return &nodeDetailCol{topo: topo, getStore: getStore}
 }
 
-func (d *clusterNodeDetailCol) Title() string                     { return "node detail" }
-func (d *clusterNodeDetailCol) Init() tea.Cmd                     { return nil }
-func (d *clusterNodeDetailCol) Update(tea.Msg) (tea.Cmd, bool)    { return nil, false }
-func (d *clusterNodeDetailCol) SetParentSelection(string) tea.Cmd { return nil }
-func (d *clusterNodeDetailCol) Selected() string {
+func (d *nodeDetailCol) Title() string                     { return "node detail" }
+func (d *nodeDetailCol) Init() tea.Cmd                     { return nil }
+func (d *nodeDetailCol) Update(tea.Msg) (tea.Cmd, bool)    { return nil, false }
+func (d *nodeDetailCol) SetParentSelection(string) tea.Cmd { return nil }
+func (d *nodeDetailCol) Selected() string {
 	if d.node == nil {
 		return ""
 	}
 	return d.node.Node
 }
-func (d *clusterNodeDetailCol) Move(int)                       {}
-func (d *clusterNodeDetailCol) Stop()                          {}
-func (d *clusterNodeDetailCol) setNode(n *stores.Instance)     { d.node = n }
+func (d *nodeDetailCol) Move(int)                       {}
+func (d *nodeDetailCol) Stop()                          {}
+func (d *nodeDetailCol) setNode(n *stores.Instance)     { d.node = n }
 
-func (d *clusterNodeDetailCol) View(w, h int, active bool) string {
+func (d *nodeDetailCol) View(w, h int, active bool) string {
 	if d.node == nil {
 		return emptyHint("select a node →")
 	}
@@ -332,7 +343,7 @@ func (d *clusterNodeDetailCol) View(w, h int, active bool) string {
 //------------------------------------------------------------------------------
 // Bottom-left — stores list
 
-type clusterStoresCol struct {
+type storesCol struct {
 	topo     *cluster.Topology
 	setStore func(string)
 
@@ -343,24 +354,24 @@ type clusterStoresCol struct {
 	selectedID string
 }
 
-func newClusterStoresCol(topo *cluster.Topology, initial string, setStore func(string)) *clusterStoresCol {
-	return &clusterStoresCol{topo: topo, setStore: setStore, selectedID: initial}
+func newStoresCol(topo *cluster.Topology, initial string, setStore func(string)) *storesCol {
+	return &storesCol{topo: topo, setStore: setStore, selectedID: initial}
 }
 
-func (s *clusterStoresCol) Title() string                     { return "stores" }
-func (s *clusterStoresCol) Init() tea.Cmd                     { return nil }
-func (s *clusterStoresCol) Update(tea.Msg) (tea.Cmd, bool)    { return nil, false }
-func (s *clusterStoresCol) SetParentSelection(string) tea.Cmd { return nil }
-func (s *clusterStoresCol) Stop()                             {}
+func (s *storesCol) Title() string                     { return "stores" }
+func (s *storesCol) Init() tea.Cmd                     { return nil }
+func (s *storesCol) Update(tea.Msg) (tea.Cmd, bool)    { return nil, false }
+func (s *storesCol) SetParentSelection(string) tea.Cmd { return nil }
+func (s *storesCol) Stop()                             {}
 
-func (s *clusterStoresCol) Selected() string {
+func (s *storesCol) Selected() string {
 	// If the remembered id is gone (store retired), fall back to
 	// the first available so View doesn't render an orphan cursor.
 	store := s.resolveSelected()
 	return store
 }
 
-func (s *clusterStoresCol) resolveSelected() string {
+func (s *storesCol) resolveSelected() string {
 	all := s.topo.Stores()
 	if len(all) == 0 {
 		return ""
@@ -377,7 +388,7 @@ func (s *clusterStoresCol) resolveSelected() string {
 	return s.selectedID
 }
 
-func (s *clusterStoresCol) Move(delta int) {
+func (s *storesCol) Move(delta int) {
 	all := s.topo.Stores()
 	if len(all) == 0 {
 		return
@@ -398,7 +409,7 @@ func (s *clusterStoresCol) Move(delta int) {
 	}
 }
 
-func (s *clusterStoresCol) View(w, h int, active bool) string {
+func (s *storesCol) View(w, h int, active bool) string {
 	all := s.topo.Stores()
 	if len(all) == 0 {
 		if err := s.topo.Err(); err != nil {
@@ -448,24 +459,24 @@ func (s *clusterStoresCol) View(w, h int, active bool) string {
 //------------------------------------------------------------------------------
 // Bottom-right — store info (cluster banner)
 
-type clusterStoreInfoCol struct {
+type storeInfoCol struct {
 	topo     *cluster.Topology
 	getStore func() string
 }
 
-func newClusterStoreInfoCol(topo *cluster.Topology, getStore func() string) *clusterStoreInfoCol {
-	return &clusterStoreInfoCol{topo: topo, getStore: getStore}
+func newStoreInfoCol(topo *cluster.Topology, getStore func() string) *storeInfoCol {
+	return &storeInfoCol{topo: topo, getStore: getStore}
 }
 
-func (i *clusterStoreInfoCol) Title() string                     { return "store info" }
-func (i *clusterStoreInfoCol) Init() tea.Cmd                     { return nil }
-func (i *clusterStoreInfoCol) Update(tea.Msg) (tea.Cmd, bool)    { return nil, false }
-func (i *clusterStoreInfoCol) SetParentSelection(string) tea.Cmd { return nil }
-func (i *clusterStoreInfoCol) Selected() string                  { return i.getStore() }
-func (i *clusterStoreInfoCol) Move(int)                          {}
-func (i *clusterStoreInfoCol) Stop()                             {}
+func (i *storeInfoCol) Title() string                     { return "store info" }
+func (i *storeInfoCol) Init() tea.Cmd                     { return nil }
+func (i *storeInfoCol) Update(tea.Msg) (tea.Cmd, bool)    { return nil, false }
+func (i *storeInfoCol) SetParentSelection(string) tea.Cmd { return nil }
+func (i *storeInfoCol) Selected() string                  { return i.getStore() }
+func (i *storeInfoCol) Move(int)                          {}
+func (i *storeInfoCol) Stop()                             {}
 
-func (i *clusterStoreInfoCol) View(w, h int, active bool) string {
+func (i *storeInfoCol) View(w, h int, active bool) string {
 	store := i.getStore()
 	if store == "" {
 		return emptyHint("pick a store →")

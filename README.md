@@ -32,12 +32,12 @@ Adaptive: three columns at ≥100 wide, two at 80-99 (parent breadcrumbed), one 
 
 | # | Mode | Columns | Status |
 |---|---|---|---|
-| 1 | cluster | 4-pane grid (top: nodes ↔ node detail; bottom: stores ↔ store info) | ✅ |
+| 1 | stores | 4-pane grid (top: stores ↔ store info; bottom: nodes ↔ node detail) | ✅ |
 | 2 | streams | streams → events → event detail | ✅ |
 | 3 | subscriptions | subs → lag → full info | ✅ |
 | 4 | snapshots | streams → versions → data | ✅ |
 
-Boot lands on **cluster** so the first thing you see is whether the cluster is healthy (leader, quorum, term, failed nodes). Drill into data with `2`. Subs and snaps land as the [reckon-go](https://codeberg.org/reckon-db-org/reckon-go) SDK gains the underlying wrappers.
+Boot lands on **stores** so the first thing you see is whether the cluster is healthy (leader, quorum, term, failed nodes per store). Drill into data with `2`. Subs and snaps land as the [reckon-go](https://codeberg.org/reckon-db-org/reckon-go) SDK gains the underlying wrappers.
 
 ## Keys
 
@@ -47,8 +47,8 @@ Boot lands on **cluster** so the first thing you see is whether the cluster is h
 | `h` / `l` (or `←`/`→` / `enter`) | Ascend / descend within the focused ranger |
 | `tab` | (Cluster mode) Swap focus between top (nodes) and bottom (stores) rangers |
 | `g` / `G` | Jump to top / bottom of focused column |
-| `1` – `4` | Switch mode (1=cluster, 2=streams, 3=subs, 4=snaps) |
-| `enter` (on a store in cluster) | Open the selected store in streams mode |
+| `1` – `4` | Switch mode (1=stores, 2=streams, 3=subs, 4=snaps) |
+| `enter` (on a store in stores mode) | Open the selected store in streams mode |
 | `e` | Open selected event / sub / snapshot in `$EDITOR` (read-only) |
 | `r` | Refresh the active mode's primary list |
 | `?` | Toggle help overlay (mode-aware cheatsheet) |

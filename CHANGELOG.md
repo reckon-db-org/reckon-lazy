@@ -7,6 +7,51 @@ Versioning: [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-05-18
+
+### Changed — mode 1 renamed `cluster` → `stores`, layout swapped (breaking)
+
+Mode 1's primary unit of navigation has always been the **store**
+(its bottom-left column listed stores; everything else was derived
+from the selected store). Naming it `cluster` was an abstraction;
+`stores` matches the data-type-noun pattern of modes 2/3/4
+(streams, subscriptions, snapshots) and leaves room for a future
+`cluster` mode that addresses the substrate (BEAM mesh, gossip,
+discovery — concerns that exist independent of any store).
+
+The 4-pane grid is also reordered so the scope selector lives at
+the top and the drilldown at the bottom. Now:
+
+```
+┌───────────────────┬──────────────────────┐
+│ stores            │ store info           │   ← top (focused at boot)
+│ ● default_store   │ status:  healthy     │
+│                   │ leader:  192.168.1.10│
+│                   │ quorum:  5/5 up      │
+├───────────────────┼──────────────────────┤
+│ nodes             │ node detail          │   ← bottom
+│   192.168.1.10 ★  │ name:    .10         │
+│ ▸ 192.168.1.11    │ role:    follower    │
+│   192.168.1.100   │ mode:    cluster     │
+└───────────────────┴──────────────────────┘
+```
+
+Reading top-to-bottom matches selection-then-drill, the first
+glance hits the store-info dashboard, and boot focus sits where
+the eye naturally starts. The internal `ClusterView`/`BuildCluster`
+rename to `StoresView`/`BuildStores`; column types lose their
+`cluster*` prefix; the position-based focus check
+(`FocusedRanger() == 1`) is replaced by a semantic
+`IsStoresFocused()` helper.
+
+`internal/cluster/` package stays — it legitimately holds the
+substrate-level Topology + StoreHealth types, reusable by a future
+real cluster-substrate mode.
+
+### Other changes
+
+None this release; the rename + swap is the whole thing.
+
 ## [0.2.0] - 2026-05-18
 
 First fully-wired release. All four modes (cluster, streams,
