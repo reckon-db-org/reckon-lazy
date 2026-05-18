@@ -499,7 +499,11 @@ func (m *model) View() string {
 	header := ui.Header(m.endpoint, m.activeStore, health, w)
 	modeBar := ui.ModeStrip(modeLabels, int(m.mode), w)
 
-	bodyH := h - 4 // header + modebar + statusbar + 1 padding line
+	// Chrome consumes 3 lines: header (1) + modeBar (1) + statusBar (1).
+	// Body fills the remaining height exactly so the frame matches the
+	// terminal — leaving even a one-line gap causes bubbletea's altscreen
+	// to retain a stale status bar from the previous frame.
+	bodyH := h - 3
 	var body string
 	if m.mode == modeStores {
 		body = m.stores.View(w, bodyH)
