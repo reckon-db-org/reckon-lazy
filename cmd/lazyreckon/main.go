@@ -161,14 +161,11 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch m2 := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = m2.Width, m2.Height
-		if os.Getenv("LAZYRECKON_DEBUG") != "" {
-			fmt.Fprintf(os.Stderr, "WindowSizeMsg: w=%d h=%d\n", m2.Width, m2.Height)
-		}
-		// Wipe the altscreen on every size change. The very first
-		// frame paints at h=24 (the fallback) before the real size
-		// arrives; without a clear, that frame's status-bar row
-		// retains its background colour after the body extends past
-		// it, looking like a duplicated bar.
+		// Wipe the altscreen on every size change. The first
+		// WindowSizeMsg can arrive after a fallback paint has
+		// already happened; without a clear, that earlier frame's
+		// status-bar row keeps its background colour after the body
+		// extends past it.
 		return m, tea.ClearScreen
 
 	case tea.KeyMsg:
@@ -560,29 +557,7 @@ func (m *model) View() string {
 	if m.showHelp {
 		return ui.HelpOverlay(modeLabels[int(m.mode)], helpFor(m.mode), w, h)
 	}
-	if os.Getenv("LAZYRECKON_DEBUG") != "" {
-		fmt.Fprintf(os.Stderr,
-			"frame: h=%d w=%d header=%d modeBar=%d body=%d status=%d total=%d\n",
-			h, w,
-			countLines(header), countLines(modeBar),
-			countLines(body), countLines(status),
-			countLines(frame),
-		)
-	}
 	return frame
-}
-
-func countLines(s string) int {
-	if s == "" {
-		return 0
-	}
-	n := 1
-	for i := 0; i < len(s); i++ {
-		if s[i] == '\n' {
-			n++
-		}
-	}
-	return n
 }
 
 // statusSummary returns the right-aligned text for the status bar.

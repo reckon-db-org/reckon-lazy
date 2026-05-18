@@ -213,7 +213,11 @@ func (r *Ranger) renderCol(idx, w, h int) string {
 		titleStyle = titleStyle.Foreground(theme.Dim)
 	}
 
-	innerW := w - 2
+	// Total budget per column is w. The box adds 2 (border) outside
+	// Width(), so Width(W) renders as W+2 visible cells. Padding(0,1)
+	// then eats 2 more inside Width(), leaving W-2 for content. So
+	// content gets w-4 cells; the box's Width() must be set to w-2.
+	innerW := w - 4
 	innerH := h - 4
 	if innerW < 4 {
 		innerW = 4
