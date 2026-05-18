@@ -59,6 +59,13 @@ func (v *SubscriptionsView) SelectedSubscription() (subscriptions.Info, bool) {
 	return v.listCol.selectedInfo()
 }
 
+// Refresh re-fetches the subscription list. Bound to `r' in the
+// parent model so users can reload without switching modes.
+func (v *SubscriptionsView) Refresh() tea.Cmd {
+	v.listCol.loading = true
+	return v.listCol.fetch()
+}
+
 //------------------------------------------------------------------------------
 // Col 0 — subscription list
 

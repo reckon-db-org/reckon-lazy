@@ -60,6 +60,15 @@ func (v *SnapshotsView) SelectedSnapshot() (snapshots.Record, bool) {
 	return v.versionsCol.selectedRecord()
 }
 
+// Refresh re-fetches the stream list (col 0). Versions (col 1)
+// re-fetch automatically when the selected stream changes; we
+// don't refetch them here without a selection-change signal.
+// Bound to `r' in the parent model.
+func (v *SnapshotsView) Refresh() tea.Cmd {
+	v.streamsCol.loading = true
+	return v.streamsCol.fetch()
+}
+
 //------------------------------------------------------------------------------
 // Col 0 — streams that have snapshots
 

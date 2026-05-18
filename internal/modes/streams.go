@@ -56,6 +56,15 @@ func (v *StreamsView) SelectedEvent() (streams.RecordedEvent, bool) {
 	return v.eventsCol.selectedEvent()
 }
 
+// Refresh re-fetches the stream list (col 0). Events (col 1)
+// re-fetch automatically when the selected stream changes; we
+// don't refetch them here without a selection-change signal.
+// Bound to `r' in the parent model.
+func (v *StreamsView) Refresh() tea.Cmd {
+	v.streamsCol.loading = true
+	return v.streamsCol.fetch()
+}
+
 //------------------------------------------------------------------------------
 // Column 1 — stream id list
 

@@ -212,6 +212,9 @@ func (m *model) handleKey(key string) (tea.Model, tea.Cmd) {
 
 	case "e":
 		return m, m.editSelected()
+
+	case "r":
+		return m, m.refresh()
 	}
 
 	// Delegate the rest to the active mode.
@@ -236,6 +239,23 @@ func (m *model) jumpToStreams(store string) tea.Cmd {
 	}
 	m.mode = modeStreams
 	return m.streams.Ranger.Init()
+}
+
+// refresh re-fetches the active mode's primary list. For cluster
+// mode that's a fresh HealthService probe (topology updates live
+// via the WatchStores stream so doesn't need re-pulling).
+func (m *model) refresh() tea.Cmd {
+	switch m.mode {
+	case modeStreams:
+		return m.streams.Refresh()
+	case modeSubscriptions:
+		return m.subs.Refresh()
+	case modeSnapshots:
+		return m.snaps.Refresh()
+	case modeCluster:
+		return m.cluster.HealthProbeCmd()
+	}
+	return nil
 }
 
 func (m *model) editSelected() tea.Cmd {
@@ -375,6 +395,7 @@ func (m *model) View() string {
 	hints = append(hints,
 		ui.KeyHint{Key: "1-4", Action: "mode"},
 		ui.KeyHint{Key: "e", Action: "edit"},
+		ui.KeyHint{Key: "r", Action: "refresh"},
 		ui.KeyHint{Key: "q", Action: "quit"},
 	)
 	summary := fmt.Sprintf("%s · %s", "◉", m.clock.Format("15:04:05"))

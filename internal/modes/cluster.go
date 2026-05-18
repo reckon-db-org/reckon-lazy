@@ -90,7 +90,10 @@ func (v *ClusterView) Init() tea.Cmd {
 }
 
 // HandleKey processes a navigation key. tab switches rangers;
-// other keys delegate to the focused ranger.
+// other keys delegate to the focused ranger. If the bottom-left
+// store cursor commits to a different store, a fresh probe fires
+// immediately (otherwise the cluster banner would stay stale until
+// the 5s tick).
 func (v *ClusterView) HandleKey(key string) (tea.Cmd, bool) {
 	switch key {
 	case "tab":
@@ -100,7 +103,12 @@ func (v *ClusterView) HandleKey(key string) (tea.Cmd, bool) {
 		v.focused = (v.focused + 1) % 2 // only 2 rangers
 		return nil, true
 	}
-	return v.activeRanger().HandleKey(key)
+	prev := v.storesCol.Selected()
+	cmd, handled := v.activeRanger().HandleKey(key)
+	if now := v.storesCol.Selected(); now != prev && now != "" {
+		cmd = tea.Batch(cmd, v.HealthProbeCmd())
+	}
+	return cmd, handled
 }
 
 // Update fans the message through both rangers + handles
