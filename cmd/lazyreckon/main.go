@@ -138,6 +138,11 @@ func (m *model) syncDetail() {
 
 func (m *model) Init() tea.Cmd {
 	cmds := []tea.Cmd{
+		// Wipe the altscreen — the splash program left painted
+		// content here when it exited, and bubbletea's diff renderer
+		// otherwise keeps a stale background until something
+		// overwrites every cell.
+		tea.ClearScreen,
 		tickCmd(),
 		m.watchStoresCmd(),
 		modes.HealthTick(),
@@ -540,12 +545,7 @@ func (m *model) View() string {
 	if m.showHelp {
 		return ui.HelpOverlay(modeLabels[int(m.mode)], helpFor(m.mode), w, h)
 	}
-	// Bubbletea's altscreen renderer diff-paints by default. If a
-	// previous frame was taller, the trailing rows can stick around
-	// (visible as doubled status bars or stray border fragments).
-	// Force a clear-to-end-of-screen at the cursor-home position so
-	// every frame starts on a known-blank canvas.
-	return "\x1b[H\x1b[J" + frame
+	return frame
 }
 
 // statusSummary returns the right-aligned text for the status bar.
