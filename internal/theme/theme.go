@@ -105,6 +105,11 @@ var (
 			Foreground(Sienna).
 			Bold(true)
 
+	// Informational badge for special-purpose streams (e.g. _dcb).
+	BadgeInfo = lipgloss.NewStyle().
+			Foreground(VioletDark).
+			Bold(true)
+
 	// Status bar at the bottom
 	StatusBar = lipgloss.NewStyle().
 			Background(VioletDark).

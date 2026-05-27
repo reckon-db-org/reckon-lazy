@@ -177,13 +177,29 @@ func (s *streamListCol) View(w, h int, active bool) string {
 
 func (s *streamListCol) viewRows() ([]string, int) {
 	if s.filter == "" {
-		return s.items, s.selected
+		rows := make([]string, len(s.items))
+		for i, id := range s.items {
+			rows[i] = decorateStreamLabel(id)
+		}
+		return rows, s.selected
 	}
 	rows := make([]string, 0, len(s.visible))
 	for _, i := range s.visible {
-		rows = append(rows, s.items[i])
+		rows = append(rows, decorateStreamLabel(s.items[i]))
 	}
 	return rows, s.selected
+}
+
+// dcbStreamID is the reckon-db pseudo-stream that holds DCB
+// (Dynamic Consistency Boundary) events. Visually marked so users
+// recognise it as cross-cutting / not a regular aggregate stream.
+const dcbStreamID = "_dcb"
+
+func decorateStreamLabel(id string) string {
+	if id == dcbStreamID {
+		return id + "  " + theme.BadgeInfo.Render("DCB")
+	}
+	return id
 }
 
 func (s *streamListCol) Stop() {}
