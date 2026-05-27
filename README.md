@@ -40,6 +40,8 @@ Adaptive: three columns at ≥100 wide, two at 80-99 (parent breadcrumbed), one 
 
 Boot lands on **stores** so the first thing you see is whether the cluster is healthy (leader, quorum, term, failed nodes per store). Drill into data with `2`. Subs and snaps land as the [reckon-go](https://codeberg.org/reckon-db-org/reckon-go) SDK gains the underlying wrappers.
 
+> **Note**: stores on reckon-db 3.1.1+ expose a `_dcb` pseudo-stream that holds [Dynamic Consistency Boundary](https://codeberg.org/reckon-db-org/reckon-db/src/branch/main/guides/dcb.md) events. It shows up in streams mode with a `DCB` badge so it's visually distinct from aggregate streams. The badge has no behavioural effect — you can browse `_dcb` like any other stream.
+
 ## Keys
 
 | Key | Action |
