@@ -59,6 +59,12 @@ type model struct {
 	snaps   *modes.SnapshotsView
 	stores  *modes.StoresView
 
+	// Store each data-mode view is currently bound to. The views are
+	// built against one store; when the active store changes we must
+	// rebuild + re-fetch. Tracked separately from activeStore because
+	// hovering in stores mode advances activeStore without rebinding.
+	streamsStore, subsStore, snapsStore string
+
 	width, height int
 
 	clock time.Time
@@ -86,13 +92,17 @@ func initialModel(endpoint string, c *reckon.Client) *model {
 		endpoint:    endpoint,
 		client:      c,
 		topology:    topo,
-		activeStore: "default_store",
+		activeStore: "", // resolved from the catalogue once WatchStores lands
 		mode:        modeStores,
 		clock:       time.Now(),
 	}
-	m.streams = modes.BuildStreams(c, m.activeStore)
-	m.subs = modes.BuildSubscriptions(c, m.activeStore)
-	m.snaps = modes.BuildSnapshots(c, m.activeStore)
+	// Views start bound to no store; they bind + fetch lazily when the
+	// user first enters that mode (see bind*ToActive). Building against
+	// a placeholder "default_store" here would fire three doomed
+	// "store not in catalogue" fetches on startup.
+	m.streams = modes.BuildStreams(c, "")
+	m.subs = modes.BuildSubscriptions(c, "")
+	m.snaps = modes.BuildSnapshots(c, "")
 	m.stores = modes.BuildStores(c, topo, m.activeStore, m.setActiveStore)
 	return m
 }
@@ -104,6 +114,41 @@ func initialModel(endpoint string, c *reckon.Client) *model {
 // store as the working set, not just hovers over it in cluster).
 func (m *model) setActiveStore(store string) {
 	m.activeStore = store
+}
+
+// bindStreamsToActive rebuilds the streams view against the current
+// active store if it's bound to a different one, returning the Init
+// cmd that fires the first fetch. No-op (nil) when already bound or
+// when no store is active yet. The sibling helpers do the same for
+// subscriptions and snapshots.
+func (m *model) bindStreamsToActive() tea.Cmd {
+	if m.activeStore == "" || m.streamsStore == m.activeStore {
+		return nil
+	}
+	m.streams.Ranger.Stop()
+	m.streams = modes.BuildStreams(m.client, m.activeStore)
+	m.streamsStore = m.activeStore
+	return m.streams.Ranger.Init()
+}
+
+func (m *model) bindSubsToActive() tea.Cmd {
+	if m.activeStore == "" || m.subsStore == m.activeStore {
+		return nil
+	}
+	m.subs.Ranger.Stop()
+	m.subs = modes.BuildSubscriptions(m.client, m.activeStore)
+	m.subsStore = m.activeStore
+	return m.subs.Ranger.Init()
+}
+
+func (m *model) bindSnapsToActive() tea.Cmd {
+	if m.activeStore == "" || m.snapsStore == m.activeStore {
+		return nil
+	}
+	m.snaps.Ranger.Stop()
+	m.snaps = modes.BuildSnapshots(m.client, m.activeStore)
+	m.snapsStore = m.activeStore
+	return m.snaps.Ranger.Init()
 }
 
 // activeRanger returns the *Ranger for the modes that are simple
@@ -146,9 +191,9 @@ func (m *model) Init() tea.Cmd {
 		tickCmd(),
 		m.watchStoresCmd(),
 		modes.HealthTick(),
-		m.streams.Ranger.Init(),
-		m.subs.Ranger.Init(),
-		m.snaps.Ranger.Init(),
+		// Streams/subs/snaps are NOT fetched here — they bind + fetch
+		// lazily on first mode-entry (bind*ToActive), once a real store
+		// is known. Only the stores topology starts immediately.
 		m.stores.Init(),
 	}
 	return tea.Batch(cmds...)
@@ -249,13 +294,13 @@ func (m *model) handleKey(key string) (tea.Model, tea.Cmd) {
 		return m, m.stores.HealthProbeCmd()
 	case "2":
 		m.mode = modeStreams
-		return m, nil
+		return m, m.bindStreamsToActive()
 	case "3":
 		m.mode = modeSubscriptions
-		return m, nil
+		return m, m.bindSubsToActive()
 	case "4":
 		m.mode = modeSnapshots
-		return m, nil
+		return m, m.bindSnapsToActive()
 
 	case "enter":
 		// In cluster mode with the stores ranger focused on its
@@ -364,13 +409,10 @@ func isPrintable(k string) bool {
 // and returns the new view's Init() so the first fetch fires
 // immediately. Existing streams goroutines are released via Stop().
 func (m *model) jumpToStreams(store string) tea.Cmd {
-	if store != m.activeStore {
-		m.activeStore = store
-		m.streams.Ranger.Stop()
-		m.streams = modes.BuildStreams(m.client, store)
-	}
+	m.activeStore = store
+	cmd := m.bindStreamsToActive()
 	m.mode = modeStreams
-	return m.streams.Ranger.Init()
+	return cmd
 }
 
 // refresh re-fetches the active mode's primary list. For cluster
