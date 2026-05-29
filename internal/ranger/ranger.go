@@ -229,6 +229,12 @@ func (r *Ranger) renderCol(idx, w, h int) string {
 	body := r.cols[idx].View(innerW, innerH, active)
 	title := titleStyle.Render(r.cols[idx].Title())
 	content := lipgloss.JoinVertical(lipgloss.Left, title, body)
+	// Clamp every line to innerW. Any single line wider than the
+	// content area (an over-long title, or a long kv value like a
+	// data_dir path) wraps to a second row otherwise, pushing the box
+	// past its height budget and overflowing the frame → a stale,
+	// doubled status bar. MaxWidth truncates each line ANSI-safely.
+	content = lipgloss.NewStyle().MaxWidth(innerW).Render(content)
 
 	return lipgloss.NewStyle().
 		BorderStyle(lipgloss.RoundedBorder()).
