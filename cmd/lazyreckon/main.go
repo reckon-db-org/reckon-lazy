@@ -425,7 +425,7 @@ func (m *model) refresh() tea.Cmd {
 func (m *model) editSelected() tea.Cmd {
 	switch m.mode {
 	case modeStreams:
-		ev, ok := m.streams.SelectedEvent()
+		ev, ok := m.streams.FocusedEvent()
 		if !ok {
 			return nil
 		}
@@ -670,8 +670,10 @@ func helpFor(mode modeIdx) []ui.HelpSection {
 		return []ui.HelpSection{
 			global, nav, actions,
 			{Title: "streams", Bindings: []ui.HelpBinding{
-				{Keys: "enter / l", What: "descend column (streams → events → detail)"},
-				{Keys: "e", What: "open event envelope + data + metadata in $EDITOR"},
+				{Keys: "enter / l", What: "drill: streams → events → detail → causation"},
+				{Keys: "l (on detail)", What: "open causal links — ▲ cause / ▼ effects"},
+				{Keys: "l (on a link)", What: "walk to that event's causal links; h walks back"},
+				{Keys: "e", What: "open the focused event (list or causal link) in $EDITOR"},
 			}},
 		}
 	case modeSubscriptions:

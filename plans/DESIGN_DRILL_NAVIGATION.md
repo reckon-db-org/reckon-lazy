@@ -27,8 +27,14 @@ Three things landed differently from §3–§7 below, each to avoid debt:
    via the existing `GetSubscriptionLag` RPC on selection change)
    rather than two drill levels.
 
-Causation/temporal drilling (§6) remains a clean additive follow-up,
-not part of this change.
+**Update (2026-06-07): §6 causation drilling shipped.** `ranger.Drill`
+gained a dynamic stack via a `Brancher` interface (a column yielding a
+child on demand); `l` past the streams detail leaf opens a
+`modes.eventNodeCol` (event + cause ▲ / effects ▼), and walking a link
+pushes another node, popped + Stop()ed on `h`. The breadcrumb traces
+the graph path. Temporal drilling and `Correlated` (which needs a
+correlation_id extracted from event metadata, not an event id) remain
+follow-ups.
 
 ---
 

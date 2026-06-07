@@ -7,6 +7,23 @@ Versioning: [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### Added — causation walk in streams mode
+
+Drilling past an event's detail (`l`) now opens its **causal links** —
+the single cause (▲) and direct effects (▼) from `CausationService` —
+and selecting a link and pressing `l` again walks to that event's
+links, across streams, unbounded. The breadcrumb traces the whole path
+(`… ▸ orders-42 v7 ▸ shipment-9 v0 ▸ …`); `h` walks back. This is the
+graph traversal the three-column layout couldn't represent.
+
+Internal: `ranger.Drill` gained a dynamic stack — a `Brancher` column
+yields a child on demand, which the Drill pushes (focusing it
+full-width) and pops (Stop()ing it) past the fixed base chain. The new
+`modes.eventNodeCol` (one event + its neighbours) is the recursive node;
+the streams detail leaf is a `Brancher` that opens the first node. `e`
+edits whichever event the cursor is on, list or causal link
+(`StreamsView.FocusedEvent`).
+
 ### Changed — breadcrumb drill-down replaces the three-column ranger
 
 The drill modes (streams / subscriptions / snapshots) move from the

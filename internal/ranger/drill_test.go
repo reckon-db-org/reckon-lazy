@@ -86,6 +86,60 @@ func TestDrillViewFitsBudget(t *testing.T) {
 	}
 }
 
+// branchCol is a fakeCol that can branch into child nodes (ranger.Brancher)
+// and records Stop() so the pop test can assert the popped node is released.
+type branchCol struct {
+	fakeCol
+	stopped *bool
+}
+
+func (b *branchCol) Child() (Column, bool) {
+	return &branchCol{fakeCol: fakeCol{title: "node", sel: "n"}, stopped: b.stopped}, true
+}
+func (b *branchCol) Stop() {
+	if b.stopped != nil {
+		*b.stopped = true
+	}
+}
+
+// TestDrillBranchPushPop checks the dynamic stack: drilling past a
+// Brancher leaf pushes a node, the breadcrumb grows, and `h` pops the
+// node and Stop()s it while never popping a base-chain column.
+func TestDrillBranchPushPop(t *testing.T) {
+	stopped := false
+	leaf := &branchCol{fakeCol: fakeCol{title: "leaf", sel: "e"}, stopped: &stopped}
+	d := NewDrill(&fakeCol{title: "root", sel: "r"}, leaf)
+	if d.base != 2 {
+		t.Fatalf("base = %d, want 2", d.base)
+	}
+
+	d.HandleKey("l") // root -> leaf (focus 1, the last base col)
+	if d.focus != 1 {
+		t.Fatalf("focus = %d, want 1", d.focus)
+	}
+
+	d.HandleKey("l") // branch: push a node
+	if d.focus != 2 || len(d.cols) != 3 {
+		t.Fatalf("after branch: focus=%d cols=%d, want 2/3", d.focus, len(d.cols))
+	}
+	if got := d.Crumbs(); len(got) != 3 {
+		t.Fatalf("crumbs = %v, want length 3 (root, leaf, node)", got)
+	}
+
+	d.HandleKey("h") // pop the node
+	if d.focus != 1 || len(d.cols) != 2 {
+		t.Fatalf("after pop: focus=%d cols=%d, want 1/2", d.focus, len(d.cols))
+	}
+	if !stopped {
+		t.Error("popped node was not Stop()ed")
+	}
+
+	d.HandleKey("h") // back into the base chain — must not truncate
+	if d.focus != 0 || len(d.cols) != 2 {
+		t.Fatalf("h in base chain: focus=%d cols=%d, want 0/2 (no truncation)", d.focus, len(d.cols))
+	}
+}
+
 // TestDrillCrumbsAndFocus checks the breadcrumb grows as you drill in
 // and that l/h move the focus (and propagate parent selections).
 func TestDrillCrumbsAndFocus(t *testing.T) {
