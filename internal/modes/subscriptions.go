@@ -14,42 +14,35 @@ import (
 	"codeberg.org/reckon-db-org/reckon-lazy/internal/theme"
 )
 
-// SubscriptionsView — 3-pane ranger:
+// SubscriptionsView — 2-level drill:
 //
-//   Col 0: subscription list (name + type + checkpoint chip)
-//   Col 1: lag detail for the selected subscription
-//   Col 2: full info (id, type, selector, name, pool, created_at)
+//	Level 0: subscription list (name + type + checkpoint chip)
+//	Level 1: detail — full info (id, type, selector, pool, ckpt,
+//	         created_at) plus live lag (GetSubscriptionLag)
 //
-// Data comes from SubscriptionService.List + GetSubscriptionLag.
-// The list refreshes on Init + every 5s; lag refetches whenever
-// the selected sub changes.
+// Lag and info are co-details of one selected subscription, not a
+// hierarchy, so they share a single full-width detail pane rather
+// than two cramped columns. Data comes from SubscriptionService.List
+// + GetSubscriptionLag; lag refetches whenever the selection changes.
 type SubscriptionsView struct {
-	Ranger  *ranger.Ranger
-	listCol *subListCol
-	lagCol  *subLagCol
-	infoCol *subInfoCol
+	Drill     *ranger.Drill
+	listCol   *subListCol
+	detailCol *subDetailCol
 }
 
 func BuildSubscriptions(c *reckon.Client, store string) *SubscriptionsView {
 	api := c.Subscriptions(store)
 	listCol := newSubListCol(api)
-	lagCol := newSubLagCol(api)
-	infoCol := newSubInfoCol()
+	detailCol := newSubDetailCol(api, func() *subscriptions.Info {
+		if info, ok := listCol.selectedInfo(); ok {
+			return &info
+		}
+		return nil
+	})
 	return &SubscriptionsView{
-		Ranger:  ranger.New(listCol, lagCol, infoCol),
-		listCol: listCol,
-		lagCol:  lagCol,
-		infoCol: infoCol,
-	}
-}
-
-// SyncDetail wires col 0 → col 2 (info reads the full Info struct
-// for the selected sub).
-func (v *SubscriptionsView) SyncDetail() {
-	if info, ok := v.listCol.selectedInfo(); ok {
-		v.infoCol.set(&info)
-	} else {
-		v.infoCol.set(nil)
+		Drill:     ranger.NewDrill(listCol, detailCol),
+		listCol:   listCol,
+		detailCol: detailCol,
 	}
 }
 
@@ -83,10 +76,11 @@ func newSubListCol(api *subscriptions.Client) *subListCol {
 	return &subListCol{api: api, loading: true}
 }
 
-func (s *subListCol) Title() string                       { return "subscriptions" }
-func (s *subListCol) Init() tea.Cmd                       { return s.fetch() }
-func (s *subListCol) SetParentSelection(string) tea.Cmd   { return nil }
-func (s *subListCol) Stop()                               {}
+func (s *subListCol) Title() string                     { return "subscriptions" }
+func (s *subListCol) Init() tea.Cmd                     { return s.fetch() }
+func (s *subListCol) SetParentSelection(string) tea.Cmd { return nil }
+func (s *subListCol) Stop()                             {}
+func (s *subListCol) Crumb() string                     { return s.Selected() } // selected sub name
 
 func (s *subListCol) Update(msg tea.Msg) (tea.Cmd, bool) {
 	if m, ok := msg.(subListLoadedMsg); ok {
@@ -232,51 +226,66 @@ type subListLoadedMsg struct {
 }
 
 //------------------------------------------------------------------------------
-// Col 1 — lag detail
+// Level 1 — combined detail: full info (read live from the list
+// selection via a closure) + lag (fetched from GetSubscriptionLag on
+// every selection change).
 
-type subLagCol struct {
-	api     *subscriptions.Client
-	parent  string
+type subDetailCol struct {
+	api    *subscriptions.Client
+	source func() *subscriptions.Info
+
+	parent  string // sub name the lag below is for
 	lag     subscriptions.Lag
 	loading bool
-	err     error
 	loaded  bool
+	err     error
 }
 
-func newSubLagCol(api *subscriptions.Client) *subLagCol { return &subLagCol{api: api} }
+func newSubDetailCol(api *subscriptions.Client, src func() *subscriptions.Info) *subDetailCol {
+	return &subDetailCol{api: api, source: src}
+}
 
-func (l *subLagCol) Title() string {
-	if l.parent == "" {
-		return "lag"
+func (d *subDetailCol) Title() string      { return "detail" }
+func (d *subDetailCol) Init() tea.Cmd      { return nil }
+func (d *subDetailCol) Move(int)           {}
+func (d *subDetailCol) SetFilter(string)   {}
+func (d *subDetailCol) GotoID(string) bool { return false }
+func (d *subDetailCol) Stop()              {}
+func (d *subDetailCol) Crumb() string      { return "" } // leaf: no breadcrumb segment
+
+func (d *subDetailCol) Selected() string {
+	if info := d.source(); info != nil {
+		return info.ID
 	}
-	return "lag · " + truncate(l.parent, 22)
+	return ""
 }
 
-func (l *subLagCol) Init() tea.Cmd { return nil }
-
-func (l *subLagCol) Update(msg tea.Msg) (tea.Cmd, bool) {
+func (d *subDetailCol) Update(msg tea.Msg) (tea.Cmd, bool) {
 	if m, ok := msg.(subLagLoadedMsg); ok {
-		if m.name != l.parent {
-			return nil, true
+		if m.name != d.parent {
+			return nil, true // stale (selection changed while RPC in flight)
 		}
-		l.lag, l.err, l.loading, l.loaded = m.lag, m.err, false, true
+		d.lag, d.err, d.loading, d.loaded = m.lag, m.err, false, true
 		return nil, true
 	}
 	return nil, false
 }
 
-func (l *subLagCol) SetParentSelection(parent string) tea.Cmd {
-	if parent == l.parent {
+// SetParentSelection fires a lag fetch whenever the selected sub
+// changes. The info half needs no fetch — it is read live from the
+// closure at View time.
+func (d *subDetailCol) SetParentSelection(parent string) tea.Cmd {
+	if parent == d.parent {
 		return nil
 	}
-	l.parent = parent
-	l.err, l.loaded = nil, false
+	d.parent = parent
+	d.err, d.loaded = nil, false
 	if parent == "" {
-		l.loading = false
+		d.loading = false
 		return nil
 	}
-	l.loading = true
-	api := l.api
+	d.loading = true
+	api := d.api
 	name := parent
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), shortRPCTimeout)
@@ -286,33 +295,36 @@ func (l *subLagCol) SetParentSelection(parent string) tea.Cmd {
 	}
 }
 
-func (l *subLagCol) Selected() string {
-	if !l.loaded {
-		return ""
-	}
-	return l.parent
-}
-
-func (l *subLagCol) Move(int)              {}
-func (l *subLagCol) SetFilter(string)       {}
-func (l *subLagCol) GotoID(string) bool     { return false }
-func (l *subLagCol) Stop()                  {}
-
-func (l *subLagCol) View(w, h int, active bool) string {
-	switch {
-	case l.parent == "":
+func (d *subDetailCol) View(w, h int, active bool) string {
+	info := d.source()
+	if info == nil {
 		return emptyHint("select a subscription →")
-	case l.loading:
-		return emptyHint("loading…")
-	case l.err != nil:
-		return errLine(l.err)
-	case !l.loaded:
-		return emptyHint("—")
 	}
 	var b strings.Builder
-	b.WriteString(kvLine("lag", lagBadge(l.lag.Lag)) + "\n")
-	b.WriteString(kvLine("ckpt", fmt.Sprintf("%d", l.lag.CurrentCheckpoint)) + "\n")
-	b.WriteString(kvLine("latest", fmt.Sprintf("%d", l.lag.LatestVersion)) + "\n")
+	b.WriteString(kvLine("id", info.ID) + "\n")
+	b.WriteString(kvLine("name", info.Name) + "\n")
+	b.WriteString(kvLine("type", string(info.Type)) + "\n")
+	if info.Selector != "" {
+		b.WriteString(kvLine("selector", info.Selector) + "\n")
+	}
+	b.WriteString(kvLine("pool", fmt.Sprintf("%d", info.PoolSize)) + "\n")
+	if !info.CreatedAt.IsZero() {
+		b.WriteString(kvLine("created", info.CreatedAt.Format("2006-01-02 15:04:05")) + "\n")
+	}
+
+	b.WriteString("\n" + theme.RowHeader.Render("lag") + "\n")
+	switch {
+	case d.loading:
+		b.WriteString(emptyHint("loading…"))
+	case d.err != nil:
+		b.WriteString(errLine(d.err))
+	case !d.loaded:
+		b.WriteString(emptyHint("—"))
+	default:
+		b.WriteString(kvLine("behind", lagBadge(d.lag.Lag)) + "\n")
+		b.WriteString(kvLine("ckpt", fmt.Sprintf("%d", d.lag.CurrentCheckpoint)) + "\n")
+		b.WriteString(kvLine("latest", fmt.Sprintf("%d", d.lag.LatestVersion)))
+	}
 	return clip(b.String(), h)
 }
 
@@ -332,52 +344,3 @@ type subLagLoadedMsg struct {
 	lag  subscriptions.Lag
 	err  error
 }
-
-//------------------------------------------------------------------------------
-// Col 2 — full info (side-channel: parent model calls .set(info))
-
-type subInfoCol struct {
-	info *subscriptions.Info
-}
-
-func newSubInfoCol() *subInfoCol                              { return &subInfoCol{} }
-func (i *subInfoCol) Title() string                           { return "info" }
-func (i *subInfoCol) Init() tea.Cmd                           { return nil }
-func (i *subInfoCol) Update(tea.Msg) (tea.Cmd, bool)          { return nil, false }
-func (i *subInfoCol) SetParentSelection(string) tea.Cmd       { return nil }
-func (i *subInfoCol) Selected() string {
-	if i.info == nil {
-		return ""
-	}
-	return i.info.ID
-}
-func (i *subInfoCol) Move(int)                       {}
-func (i *subInfoCol) SetFilter(string)                {}
-func (i *subInfoCol) GotoID(string) bool              { return false }
-func (i *subInfoCol) Stop()                          {}
-func (i *subInfoCol) set(info *subscriptions.Info)   { i.info = info }
-
-func (i *subInfoCol) View(w, h int, active bool) string {
-	if i.info == nil {
-		return emptyHint("—")
-	}
-	in := i.info
-	var b strings.Builder
-	b.WriteString(kvLine("id", in.ID) + "\n")
-	b.WriteString(kvLine("name", in.Name) + "\n")
-	b.WriteString(kvLine("type", string(in.Type)) + "\n")
-	if in.Selector != "" {
-		b.WriteString(kvLine("selector", in.Selector) + "\n")
-	}
-	b.WriteString(kvLine("pool", fmt.Sprintf("%d", in.PoolSize)) + "\n")
-	b.WriteString(kvLine("ckpt", fmt.Sprintf("%d", in.Checkpoint)) + "\n")
-	if !in.CreatedAt.IsZero() {
-		b.WriteString(kvLine("created", in.CreatedAt.Format("2006-01-02 15:04:05")) + "\n")
-	}
-	return clip(b.String(), h)
-}
-
-//------------------------------------------------------------------------------
-// Snapshots — empty stub gets replaced by the snapshots.go file in
-// this package. (Originally subs and snaps were both stubs in the
-// same file; the snaps stub now lives in snapshots.go.)

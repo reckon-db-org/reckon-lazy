@@ -43,7 +43,6 @@ func fourTenantTopo() *cluster.Topology {
 func TestStoresViewFitsBudget(t *testing.T) {
 	topo := fourTenantTopo()
 	v := BuildStores(nil, topo, "parksim_leuven_store", func(string) {})
-	v.SyncDetail()
 
 	// A spread of realistic terminal geometries (incl. the full-HD
 	// 187x44-ish from the bug report).

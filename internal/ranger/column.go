@@ -1,4 +1,8 @@
-// Package ranger is the three-column miller-columns layout.
+// Package ranger holds the miller-columns primitives (the Column
+// interface + bordered, width-clamped column renderer) and two
+// orchestrators over them: Ranger, the fixed side-by-side grid used
+// by cluster mode, and Drill, the breadcrumb drill-down used by the
+// streams / subscriptions / snapshots modes.
 package ranger
 
 import tea "github.com/charmbracelet/bubbletea"

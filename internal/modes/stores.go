@@ -19,11 +19,11 @@ import (
 
 // StoresView is a 4-pane grid built from two stacked 2-pane rangers:
 //
-//   ┌──────────────┬──────────────┐
-//   │ nodes        │ node detail  │   ← top ranger
-//   ├──────────────┼──────────────┤
-//   │ stores       │ store info   │   ← bottom ranger
-//   └──────────────┴──────────────┘
+//	┌──────────────┬──────────────┐
+//	│ nodes        │ node detail  │   ← top ranger
+//	├──────────────┼──────────────┤
+//	│ stores       │ store info   │   ← bottom ranger
+//	└──────────────┴──────────────┘
 //
 // The bottom-left stores column drives everything: its selection
 // IS the model's active store. The top ranger reads that store via
@@ -35,13 +35,13 @@ type StoresView struct {
 	client *reckon.Client
 	topo   *cluster.Topology
 
-	storesRanger    *ranger.Ranger
+	storesRanger *ranger.Ranger
 	nodesCol     *nodesCol
 	nodeDetail   *nodeDetailCol
 
 	nodesRanger *ranger.Ranger
-	storesCol    *storesCol
-	storeInfo    *storeInfoCol
+	storesCol   *storesCol
+	storeInfo   *storeInfoCol
 
 	focused int // 0 = top, 1 = bottom
 
@@ -78,9 +78,15 @@ func BuildStores(c *reckon.Client, topo *cluster.Topology, initialStore string, 
 	v.storesRanger = ranger.New2(v.storesCol, v.storeInfo)
 
 	// Bottom ranger: nodes hosting the selected store + per-node
-	// detail. Drilled from the top.
+	// detail. The detail reads the selected node live through a
+	// closure over nodesCol, so there is no side-channel to sync.
 	v.nodesCol = newNodesCol(topo, getStore)
-	v.nodeDetail = newNodeDetailCol(topo, getStore)
+	v.nodeDetail = newNodeDetailCol(topo, getStore, func() *stores.Instance {
+		if inst, ok := v.nodesCol.selectedNode(); ok {
+			return &inst
+		}
+		return nil
+	})
 	v.nodesRanger = ranger.New2(v.nodesCol, v.nodeDetail)
 
 	// Start with the stores ranger (top) focused so the user's first
@@ -129,15 +135,6 @@ func (v *StoresView) Update(msg tea.Msg) tea.Cmd {
 		return tea.Batch(v.HealthProbeCmd(), healthTick())
 	}
 	return tea.Batch(v.storesRanger.Update(msg), v.nodesRanger.Update(msg))
-}
-
-// SyncDetail copies col selections into the detail columns.
-func (v *StoresView) SyncDetail() {
-	if ev, ok := v.nodesCol.selectedNode(); ok {
-		v.nodeDetail.setNode(&ev)
-	} else {
-		v.nodeDetail.setNode(nil)
-	}
 }
 
 // View renders the 4-pane grid at (width, height). Splits height
@@ -315,11 +312,11 @@ func (n *nodesCol) Stop() {}
 type nodeDetailCol struct {
 	topo     *cluster.Topology
 	getStore func() string
-	node     *stores.Instance
+	source   func() *stores.Instance
 }
 
-func newNodeDetailCol(topo *cluster.Topology, getStore func() string) *nodeDetailCol {
-	return &nodeDetailCol{topo: topo, getStore: getStore}
+func newNodeDetailCol(topo *cluster.Topology, getStore func() string, src func() *stores.Instance) *nodeDetailCol {
+	return &nodeDetailCol{topo: topo, getStore: getStore, source: src}
 }
 
 func (d *nodeDetailCol) Title() string                     { return "node detail" }
@@ -327,38 +324,38 @@ func (d *nodeDetailCol) Init() tea.Cmd                     { return nil }
 func (d *nodeDetailCol) Update(tea.Msg) (tea.Cmd, bool)    { return nil, false }
 func (d *nodeDetailCol) SetParentSelection(string) tea.Cmd { return nil }
 func (d *nodeDetailCol) Selected() string {
-	if d.node == nil {
-		return ""
+	if n := d.source(); n != nil {
+		return n.Node
 	}
-	return d.node.Node
+	return ""
 }
-func (d *nodeDetailCol) Move(int)                       {}
-func (d *nodeDetailCol) SetFilter(string)                {}
-func (d *nodeDetailCol) GotoID(string) bool              { return false }
-func (d *nodeDetailCol) Stop()                          {}
-func (d *nodeDetailCol) setNode(n *stores.Instance)     { d.node = n }
+func (d *nodeDetailCol) Move(int)           {}
+func (d *nodeDetailCol) SetFilter(string)   {}
+func (d *nodeDetailCol) GotoID(string) bool { return false }
+func (d *nodeDetailCol) Stop()              {}
 
 func (d *nodeDetailCol) View(w, h int, active bool) string {
-	if d.node == nil {
+	node := d.source()
+	if node == nil {
 		return emptyHint("select a node →")
 	}
 	store := d.getStore()
 	hp := d.topo.Health(store)
 	var b strings.Builder
 
-	b.WriteString(kvLine("name", d.node.Node) + "\n")
+	b.WriteString(kvLine("name", node.Node) + "\n")
 	role := "follower"
-	if hp.Leader == d.node.Node {
+	if hp.Leader == node.Node {
 		role = "leader ★"
 	}
 	b.WriteString(kvLine("role", role) + "\n")
-	b.WriteString(kvLine("mode", string(d.node.Mode)) + "\n")
-	b.WriteString(kvLine("data_dir", d.node.DataDir) + "\n")
-	if !d.node.RegisteredAt.IsZero() {
-		b.WriteString(kvLine("up since", humanAgo(d.node.RegisteredAt)) + "\n")
+	b.WriteString(kvLine("mode", string(node.Mode)) + "\n")
+	b.WriteString(kvLine("data_dir", node.DataDir) + "\n")
+	if !node.RegisteredAt.IsZero() {
+		b.WriteString(kvLine("up since", humanAgo(node.RegisteredAt)) + "\n")
 	}
-	if d.node.Timeout > 0 {
-		b.WriteString(kvLine("rpc_t/o", d.node.Timeout.String()) + "\n")
+	if node.Timeout > 0 {
+		b.WriteString(kvLine("rpc_t/o", node.Timeout.String()) + "\n")
 	}
 	return clip(b.String(), h)
 }
@@ -521,8 +518,8 @@ func (i *storeInfoCol) Update(tea.Msg) (tea.Cmd, bool)    { return nil, false }
 func (i *storeInfoCol) SetParentSelection(string) tea.Cmd { return nil }
 func (i *storeInfoCol) Selected() string                  { return i.getStore() }
 func (i *storeInfoCol) Move(int)                          {}
-func (i *storeInfoCol) SetFilter(string)                   {}
-func (i *storeInfoCol) GotoID(string) bool                 { return false }
+func (i *storeInfoCol) SetFilter(string)                  {}
+func (i *storeInfoCol) GotoID(string) bool                { return false }
 func (i *storeInfoCol) Stop()                             {}
 
 func (i *storeInfoCol) View(w, h int, active bool) string {

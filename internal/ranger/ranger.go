@@ -201,10 +201,16 @@ func (r *Ranger) renderPair(w, h int) string {
 	)
 }
 
-// renderCol wraps one column in its border + title chip. Border
-// brightens when active.
+// renderCol wraps the column at idx in its border + title chip,
+// brightening when it is the focused column.
 func (r *Ranger) renderCol(idx, w, h int) string {
-	active := r.focus == idx
+	return renderColumn(r.cols[idx], w, h, r.focus == idx)
+}
+
+// renderColumn wraps one column in its border + title chip. Border
+// brightens when active. Shared by Ranger (grid) and Drill
+// (breadcrumb) so the hard-won width-clamp lives in exactly one place.
+func renderColumn(col Column, w, h int, active bool) string {
 	border := theme.VioletMid
 	titleStyle := theme.PaneTitle
 	if active {
@@ -226,8 +232,8 @@ func (r *Ranger) renderCol(idx, w, h int) string {
 		innerH = 1
 	}
 
-	body := r.cols[idx].View(innerW, innerH, active)
-	title := titleStyle.Render(r.cols[idx].Title())
+	body := col.View(innerW, innerH, active)
+	title := titleStyle.Render(col.Title())
 	content := lipgloss.JoinVertical(lipgloss.Left, title, body)
 	// Clamp every line to innerW. Any single line wider than the
 	// content area (an over-long title, or a long kv value like a

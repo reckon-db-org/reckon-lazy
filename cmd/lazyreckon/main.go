@@ -1,9 +1,12 @@
 // lazyreckon — a terminal UI for the ReckonDB event store, in the
 // spirit of lazygit / lazydocker / k9s.
 //
-// Layout: ranger-style three-column miller view. Bottom mode strip
-// swaps what the columns list (streams / subscriptions / snapshots).
-// Header carries the active store + cluster health.
+// Layout: breadcrumb drill-down. The top bar shows the navigation
+// path (reckon ▸ store ▸ mode ▸ …); the body shows a slim sibling
+// rail plus a wide child preview, collapsing to a full-width pane at
+// the leaf. Number keys 1-4 switch modes (cluster / streams / subs /
+// snapshots); cluster mode keeps its own 4-pane grid. Header carries
+// the active store + cluster health.
 package main
 
 import (
@@ -125,57 +128,52 @@ func (m *model) bindStreamsToActive() tea.Cmd {
 	if m.activeStore == "" || m.streamsStore == m.activeStore {
 		return nil
 	}
-	m.streams.Ranger.Stop()
+	m.streams.Drill.Stop()
 	m.streams = modes.BuildStreams(m.client, m.activeStore)
 	m.streamsStore = m.activeStore
-	return m.streams.Ranger.Init()
+	return m.streams.Drill.Init()
 }
 
 func (m *model) bindSubsToActive() tea.Cmd {
 	if m.activeStore == "" || m.subsStore == m.activeStore {
 		return nil
 	}
-	m.subs.Ranger.Stop()
+	m.subs.Drill.Stop()
 	m.subs = modes.BuildSubscriptions(m.client, m.activeStore)
 	m.subsStore = m.activeStore
-	return m.subs.Ranger.Init()
+	return m.subs.Drill.Init()
 }
 
 func (m *model) bindSnapsToActive() tea.Cmd {
 	if m.activeStore == "" || m.snapsStore == m.activeStore {
 		return nil
 	}
-	m.snaps.Ranger.Stop()
+	m.snaps.Drill.Stop()
 	m.snaps = modes.BuildSnapshots(m.client, m.activeStore)
 	m.snapsStore = m.activeStore
-	return m.snaps.Ranger.Init()
+	return m.snaps.Drill.Init()
 }
 
-// activeRanger returns the *Ranger for the modes that are simple
-// rangers. Cluster mode is special (composite of two rangers); for
-// it, handleKey/Update/View route directly through m.stores.
-func (m *model) activeRanger() *ranger.Ranger {
+// activeDrill returns the *Drill for the current drill mode. Cluster
+// mode is special (a composite of two rangers); for it,
+// handleKey/Update/View route directly through m.stores.
+func (m *model) activeDrill() *ranger.Drill {
 	switch m.mode {
 	case modeSubscriptions:
-		return m.subs.Ranger
+		return m.subs.Drill
 	case modeSnapshots:
-		return m.snaps.Ranger
+		return m.snaps.Drill
 	default:
-		return m.streams.Ranger
+		return m.streams.Drill
 	}
 }
 
-func (m *model) syncDetail() {
-	switch m.mode {
-	case modeStreams:
-		m.streams.SyncDetail()
-	case modeSubscriptions:
-		m.subs.SyncDetail()
-	case modeSnapshots:
-		m.snaps.SyncDetail()
-	case modeStores:
-		m.stores.SyncDetail()
-	}
+// filterTarget is what the command bar (/, :) drives: either a drill
+// (streams/subs/snaps) or one of the cluster rangers. Both satisfy
+// this; the bar doesn't care which.
+type filterTarget interface {
+	SetFilter(string) tea.Cmd
+	GotoID(string) (tea.Cmd, bool)
 }
 
 //------------------------------------------------------------------------------
@@ -241,14 +239,13 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	// Fan the message through the active mode. Cluster has its own
-	// Update (it owns a 4-pane composite, not a single ranger).
+	// Update (it owns a 4-pane composite, not a single drill).
 	var cmd tea.Cmd
 	if m.mode == modeStores {
 		cmd = m.stores.Update(msg)
 	} else {
-		cmd = m.activeRanger().Update(msg)
+		cmd = m.activeDrill().Update(msg)
 	}
-	m.syncDetail()
 	return m, cmd
 }
 
@@ -278,9 +275,7 @@ func (m *model) handleKey(key string) (tea.Model, tea.Cmd) {
 		m.cmdBuf = ""
 		m.cmdMsg = ""
 		// Apply empty filter so any previous one clears as the user starts typing.
-		if rg := m.activeRangerInclStores(); rg != nil {
-			_ = rg.SetFilter("")
-		}
+		_ = m.activeFilterTarget().SetFilter("")
 		return m, nil
 
 	case ":":
@@ -324,33 +319,31 @@ func (m *model) handleKey(key string) (tea.Model, tea.Cmd) {
 	if m.mode == modeStores {
 		cmd, _ = m.stores.HandleKey(key)
 	} else {
-		cmd, _ = m.activeRanger().HandleKey(key)
+		cmd, _ = m.activeDrill().HandleKey(key)
 	}
-	m.syncDetail()
 	return m, cmd
 }
 
-// activeRangerInclStores returns the focused ranger for the current
-// mode. For modeStores, it returns whichever inner ranger has focus
-// (top = nodes, bottom = stores) so filter/goto operate on the
-// visually-focused list.
-func (m *model) activeRangerInclStores() *ranger.Ranger {
+// activeFilterTarget returns the filter/goto target for the current
+// mode. For modeStores it's whichever inner ranger has focus (top =
+// nodes, bottom = stores) so filter/goto operate on the
+// visually-focused list; otherwise it's the active drill.
+func (m *model) activeFilterTarget() filterTarget {
 	if m.mode == modeStores {
 		return m.stores.FocusedRanger()
 	}
-	return m.activeRanger()
+	return m.activeDrill()
 }
 
 // handleCmdKey runs while the command bar (filter or goto) is open.
 // Esc cancels and clears any in-progress filter. Enter commits.
 // Backspace edits. Printable characters append to cmdBuf.
 func (m *model) handleCmdKey(key string) (tea.Model, tea.Cmd) {
-	rg := m.activeRangerInclStores()
+	rg := m.activeFilterTarget()
 	switch key {
 	case "esc", "ctrl+c":
-		if m.cmdMode == cmdFilter && rg != nil {
+		if m.cmdMode == cmdFilter {
 			_ = rg.SetFilter("")
-			m.syncDetail()
 		}
 		m.cmdMode = cmdNone
 		m.cmdBuf = ""
@@ -362,13 +355,12 @@ func (m *model) handleCmdKey(key string) (tea.Model, tea.Cmd) {
 		buf := m.cmdBuf
 		m.cmdMode = cmdNone
 		m.cmdBuf = ""
-		if mode == cmdGoto && rg != nil && buf != "" {
+		if mode == cmdGoto && buf != "" {
 			if _, hit := rg.GotoID(buf); !hit {
 				m.cmdMsg = "no match for: " + buf
 			} else {
 				m.cmdMsg = ""
 			}
-			m.syncDetail()
 		}
 		return m, nil
 
@@ -376,9 +368,8 @@ func (m *model) handleCmdKey(key string) (tea.Model, tea.Cmd) {
 		if len(m.cmdBuf) > 0 {
 			m.cmdBuf = m.cmdBuf[:len(m.cmdBuf)-1]
 		}
-		if m.cmdMode == cmdFilter && rg != nil {
+		if m.cmdMode == cmdFilter {
 			_ = rg.SetFilter(m.cmdBuf)
-			m.syncDetail()
 		}
 		return m, nil
 	}
@@ -386,9 +377,8 @@ func (m *model) handleCmdKey(key string) (tea.Model, tea.Cmd) {
 	// Printable input: append to buffer, live-apply for filter mode.
 	if isPrintable(key) {
 		m.cmdBuf += key
-		if m.cmdMode == cmdFilter && rg != nil {
+		if m.cmdMode == cmdFilter {
 			_ = rg.SetFilter(m.cmdBuf)
-			m.syncDetail()
 		}
 	}
 	return m, nil
@@ -556,9 +546,9 @@ func (m *model) View() string {
 
 	health := m.deriveHealth()
 	header := ui.Header(m.endpoint, m.activeStore, health, w)
-	modeBar := ui.ModeStrip(modeLabels, int(m.mode), w)
+	crumbBar := ui.Breadcrumb(m.breadcrumbSegments(), w)
 
-	// Chrome consumes 3 lines: header (1) + modeBar (1) + statusBar (1).
+	// Chrome consumes 3 lines: header (1) + breadcrumb (1) + statusBar (1).
 	// Body fills the remaining height exactly so the frame matches the
 	// terminal — leaving even a one-line gap causes bubbletea's altscreen
 	// to retain a stale status bar from the previous frame.
@@ -567,12 +557,16 @@ func (m *model) View() string {
 	if m.mode == modeStores {
 		body = m.stores.View(w, bodyH)
 	} else {
-		body = m.activeRanger().View(w, bodyH)
+		body = m.activeDrill().View(w, bodyH)
 	}
 
+	navAction := "drill"
+	if m.mode == modeStores {
+		navAction = "in/out"
+	}
 	hints := []ui.KeyHint{
 		{Key: "j/k", Action: "move"},
-		{Key: "h/l", Action: "in/out"},
+		{Key: "h/l", Action: navAction},
 	}
 	if m.mode == modeStores {
 		hints = append(hints, ui.KeyHint{Key: "tab", Action: "swap rangers"})
@@ -591,7 +585,7 @@ func (m *model) View() string {
 
 	frame := lipgloss.JoinVertical(lipgloss.Left,
 		header,
-		modeBar,
+		crumbBar,
 		body,
 		status,
 	)
@@ -600,6 +594,21 @@ func (m *model) View() string {
 		return ui.HelpOverlay(modeLabels[int(m.mode)], helpFor(m.mode), w, h)
 	}
 	return frame
+}
+
+// breadcrumbSegments builds the navigation path shown in the top bar:
+// reckon ▸ <store> ▸ <mode> ▸ <drill path…>. For cluster mode the
+// path stops at the mode (the 4-pane grid isn't a single path).
+func (m *model) breadcrumbSegments() []string {
+	store := m.activeStore
+	if store == "" {
+		store = "—"
+	}
+	segs := []string{"reckon", store, modeLabels[int(m.mode)]}
+	if m.mode != modeStores {
+		segs = append(segs, m.activeDrill().Crumbs()...)
+	}
+	return segs
 }
 
 // statusSummary returns the right-aligned text for the status bar.
@@ -632,8 +641,9 @@ func helpFor(mode modeIdx) []ui.HelpSection {
 	nav := ui.HelpSection{
 		Title: "navigation",
 		Bindings: []ui.HelpBinding{
-			{Keys: "j / k / ↓ / ↑", What: "move within focused column"},
-			{Keys: "h / l / ← / →", What: "ascend / descend within ranger"},
+			{Keys: "j / k / ↓ / ↑", What: "move within the focused list"},
+			{Keys: "l / → / enter", What: "drill in (deeper); leaf zooms full-width"},
+			{Keys: "h / ←", What: "drill back out"},
 			{Keys: "g / G", What: "jump to top / bottom"},
 			{Keys: "/", What: "filter focused column (case-insensitive substring; esc clears)"},
 			{Keys: ":", What: "jump to a specific id in focused column (case-insensitive substring)"},
@@ -708,10 +718,10 @@ func (m *model) deriveHealth() ui.Health {
 // Stores watch — top-level, drives header
 
 type storesTickMsg struct {
-	events     []stores.Event
-	err        error
-	events_ch  <-chan stores.Event
-	errs_ch    <-chan error
+	events    []stores.Event
+	err       error
+	events_ch <-chan stores.Event
+	errs_ch   <-chan error
 }
 
 func (m *model) watchStoresCmd() tea.Cmd {
@@ -762,9 +772,9 @@ func tickCmd() tea.Cmd {
 //------------------------------------------------------------------------------
 
 func (m *model) shutdown() {
-	m.streams.Ranger.Stop()
-	m.subs.Ranger.Stop()
-	m.snaps.Ranger.Stop()
+	m.streams.Drill.Stop()
+	m.subs.Drill.Stop()
+	m.snaps.Drill.Stop()
 	m.stores.Stop()
 	_ = m.client.Close()
 }

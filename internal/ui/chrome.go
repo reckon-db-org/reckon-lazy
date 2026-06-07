@@ -1,6 +1,6 @@
 // Package ui renders the cross-cutting screen elements: header,
-// mode strip, status bar. The body (three-column ranger layout)
-// lives under internal/ranger.
+// breadcrumb, status bar. The body (the Ranger grid / Drill
+// drill-down) lives under internal/ranger.
 package ui
 
 import (
@@ -69,39 +69,33 @@ func shortNode(s string) string {
 	return s
 }
 
-// ModeStrip renders the bottom mode selector. Active mode shows in
-// Horus green; others muted. On a narrow terminal labels collapse
-// to "1 2 3 4" (number-only) so the strip always fits one line.
-func ModeStrip(labels []string, active, width int) string {
-	row := renderModeStrip(labels, active, false)
-	if lipgloss.Width(row) > width {
-		row = renderModeStrip(labels, active, true)
+// Breadcrumb renders the navigation path as `a ▸ b ▸ c`, the deepest
+// segment emphasised. It replaces the old mode strip: the mode is now
+// just the second/third segment of the path (reckon ▸ store ▸ mode ▸
+// …). On an over-wide path the middle is elided to `root ▸ … ▸ parent
+// ▸ leaf` so the bar always fits one line.
+func Breadcrumb(segments []string, width int) string {
+	render := func(segs []string) string {
+		parts := make([]string, len(segs))
+		for i, s := range segs {
+			if i == len(segs)-1 {
+				parts[i] = theme.HeaderAccent.Render(s)
+			} else {
+				parts[i] = theme.HeaderBar.Render(s)
+			}
+		}
+		return strings.Join(parts, theme.StatusDim.Render(" ▸ "))
 	}
-	// Hard-truncate as a last resort (very small terminals).
-	if w := lipgloss.Width(row); w > width {
-		return row // let it overflow rather than break ANSI codes mid-byte
-	}
-	gap := width - lipgloss.Width(row)
-	return row + theme.TabGap.Render(strings.Repeat(" ", gap))
-}
 
-func renderModeStrip(labels []string, active int, compact bool) string {
-	parts := make([]string, 0, len(labels))
-	for i, label := range labels {
-		var text string
-		if compact {
-			text = fmt.Sprintf(" %d ", i+1)
-			_ = label
-		} else {
-			text = fmt.Sprintf(" %d %s ", i+1, label)
-		}
-		if i == active {
-			parts = append(parts, theme.TabActive.Render(text))
-		} else {
-			parts = append(parts, theme.TabInactive.Render(text))
-		}
+	row := render(segments)
+	if lipgloss.Width(row) > width && len(segments) > 4 {
+		elided := append([]string{segments[0], "…"}, segments[len(segments)-2:]...)
+		row = render(elided)
 	}
-	return lipgloss.JoinHorizontal(lipgloss.Top, parts...)
+	if w := lipgloss.Width(row); w < width {
+		row += theme.TabGap.Render(strings.Repeat(" ", width-w))
+	}
+	return row
 }
 
 // StatusBar renders the bottom-most line: keymap hints + right-aligned

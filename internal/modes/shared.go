@@ -1,6 +1,7 @@
-// Package modes hosts one ranger triple per top-level mode.
-// Each constructor returns a *ranger.Ranger already wired against
-// an open reckon.Client and a chosen store.
+// Package modes hosts one view per top-level mode. The drill modes
+// (streams / subscriptions / snapshots) wire a *ranger.Drill chain;
+// cluster mode wires a 4-pane *ranger.Ranger grid. Each constructor
+// is bound to an open reckon.Client and a chosen store.
 package modes
 
 import (

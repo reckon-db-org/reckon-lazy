@@ -14,11 +14,11 @@ import (
 	"codeberg.org/reckon-db-org/reckon-lazy/internal/theme"
 )
 
-// SnapshotsView — 3-pane ranger:
+// SnapshotsView — 3-level drill:
 //
-//   Col 0: streams that have snapshots
-//   Col 1: snapshot versions for the selected stream
-//   Col 2: snapshot data + anchor hash + metadata
+//	Level 0: streams that have snapshots
+//	Level 1: snapshot versions for the selected stream
+//	Level 2: snapshot data + anchor hash + metadata (leaf)
 //
 // The gateway/db ignores source_uuid in storage (the handler
 // passes it through but reckon_db_snapshots:load_at/3 only takes
@@ -26,7 +26,7 @@ import (
 // If a future deployment uses source as a real namespace we'll
 // add a config knob or a heuristic.
 type SnapshotsView struct {
-	Ranger      *ranger.Ranger
+	Drill       *ranger.Drill
 	streamsCol  *snapStreamsCol
 	versionsCol *snapVersionsCol
 	dataCol     *snapDataCol
@@ -36,21 +36,17 @@ func BuildSnapshots(c *reckon.Client, store string) *SnapshotsView {
 	api := c.Snapshots(store)
 	streamsCol := newSnapStreamsCol(api)
 	versionsCol := newSnapVersionsCol(api)
-	dataCol := newSnapDataCol()
+	dataCol := newSnapDataCol(func() *snapshots.Record {
+		if rec, ok := versionsCol.selectedRecord(); ok {
+			return &rec
+		}
+		return nil
+	})
 	return &SnapshotsView{
-		Ranger:      ranger.New(streamsCol, versionsCol, dataCol),
+		Drill:       ranger.NewDrill(streamsCol, versionsCol, dataCol),
 		streamsCol:  streamsCol,
 		versionsCol: versionsCol,
 		dataCol:     dataCol,
-	}
-}
-
-// SyncDetail mirrors col 1's selected snapshot into col 2.
-func (v *SnapshotsView) SyncDetail() {
-	if rec, ok := v.versionsCol.selectedRecord(); ok {
-		v.dataCol.set(&rec)
-	} else {
-		v.dataCol.set(nil)
 	}
 }
 
@@ -178,6 +174,9 @@ func (s *snapStreamsCol) View(w, h int, active bool) string {
 	}
 	return renderList(s.items, s.selected, w, h, active)
 }
+
+// Crumb — the selected stream id for the breadcrumb.
+func (s *snapStreamsCol) Crumb() string { return s.Selected() }
 
 func (s *snapStreamsCol) fetch() tea.Cmd {
 	api := s.api
@@ -332,6 +331,14 @@ func (v *snapVersionsCol) View(w, h int, active bool) string {
 
 func (v *snapVersionsCol) Stop() {}
 
+// Crumb — the selected snapshot version for the breadcrumb.
+func (v *snapVersionsCol) Crumb() string {
+	if rec, ok := v.selectedRecord(); ok {
+		return fmt.Sprintf("v%d", rec.Version)
+	}
+	return ""
+}
+
 type snapVersionsLoadedMsg struct {
 	streamID string
 	items    []snapshots.Record
@@ -342,31 +349,33 @@ type snapVersionsLoadedMsg struct {
 // Col 2 — snapshot data + anchor hash + metadata
 
 type snapDataCol struct {
-	rec *snapshots.Record
+	source func() *snapshots.Record
 }
 
-func newSnapDataCol() *snapDataCol                            { return &snapDataCol{} }
-func (d *snapDataCol) Title() string                          { return "data" }
-func (d *snapDataCol) Init() tea.Cmd                          { return nil }
-func (d *snapDataCol) Update(tea.Msg) (tea.Cmd, bool)         { return nil, false }
-func (d *snapDataCol) SetParentSelection(string) tea.Cmd      { return nil }
-func (d *snapDataCol) SetFilter(string)                       {}
-func (d *snapDataCol) GotoID(string) bool                     { return false }
-func (d *snapDataCol) Selected() string {
-	if d.rec == nil {
-		return ""
-	}
-	return fmt.Sprintf("%s@%d", d.rec.StreamID, d.rec.Version)
+func newSnapDataCol(src func() *snapshots.Record) *snapDataCol {
+	return &snapDataCol{source: src}
 }
-func (d *snapDataCol) Move(int)                       {}
-func (d *snapDataCol) Stop()                          {}
-func (d *snapDataCol) set(r *snapshots.Record)        { d.rec = r }
+func (d *snapDataCol) Title() string                     { return "data" }
+func (d *snapDataCol) Init() tea.Cmd                     { return nil }
+func (d *snapDataCol) Update(tea.Msg) (tea.Cmd, bool)    { return nil, false }
+func (d *snapDataCol) SetParentSelection(string) tea.Cmd { return nil }
+func (d *snapDataCol) SetFilter(string)                  {}
+func (d *snapDataCol) GotoID(string) bool                { return false }
+func (d *snapDataCol) Crumb() string                     { return "" } // leaf: no breadcrumb segment
+func (d *snapDataCol) Selected() string {
+	if r := d.source(); r != nil {
+		return fmt.Sprintf("%s@%d", r.StreamID, r.Version)
+	}
+	return ""
+}
+func (d *snapDataCol) Move(int) {}
+func (d *snapDataCol) Stop()    {}
 
 func (d *snapDataCol) View(w, h int, active bool) string {
-	if d.rec == nil {
+	r := d.source()
+	if r == nil {
 		return emptyHint("—")
 	}
-	r := d.rec
 	var b strings.Builder
 	b.WriteString(kvLine("stream", r.StreamID) + "\n")
 	b.WriteString(kvLine("version", fmt.Sprintf("%d", r.Version)) + "\n")

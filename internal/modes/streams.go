@@ -14,39 +14,35 @@ import (
 	"codeberg.org/reckon-db-org/reckon-lazy/internal/theme"
 )
 
-// StreamsView is the wired ranger triple for the streams mode plus
-// typed handles to the columns that need side-channel updates from
-// the parent model (e.g. binding the selected event into the detail
-// column).
+// StreamsView is the wired drill chain for the streams mode
+// (stream → events → event detail) plus typed handles to the columns
+// the parent model reaches for (refresh, editor handoff).
 type StreamsView struct {
-	Ranger      *ranger.Ranger
-	streamsCol  *streamListCol
-	eventsCol   *eventListCol
-	detailCol   *eventDetailCol
+	Drill      *ranger.Drill
+	streamsCol *streamListCol
+	eventsCol  *eventListCol
+	detailCol  *eventDetailCol
 }
 
 // BuildStreams returns a wired StreamsView bound to (client, store).
+// The detail leaf reads the selected event live through a closure
+// over eventsCol, so there is no parent→leaf side-channel to keep in
+// sync.
 func BuildStreams(c *reckon.Client, store string) *StreamsView {
 	api := c.Streams(store)
 	streamsCol := newStreamListCol(api)
 	eventsCol := newEventListCol(api)
-	detailCol := newEventDetailCol()
+	detailCol := newEventDetailCol(func() *streams.RecordedEvent {
+		if ev, ok := eventsCol.selectedEvent(); ok {
+			return &ev
+		}
+		return nil
+	})
 	return &StreamsView{
-		Ranger:     ranger.New(streamsCol, eventsCol, detailCol),
+		Drill:      ranger.NewDrill(streamsCol, eventsCol, detailCol),
 		streamsCol: streamsCol,
 		eventsCol:  eventsCol,
 		detailCol:  detailCol,
-	}
-}
-
-// SyncDetail copies the currently-selected event from column 2 into
-// column 3. Call once per top-level Update so the detail view reflects
-// the latest selection without needing inter-column reach-around.
-func (v *StreamsView) SyncDetail() {
-	if ev, ok := v.eventsCol.selectedEvent(); ok {
-		v.detailCol.set(&ev)
-	} else {
-		v.detailCol.set(nil)
 	}
 }
 
@@ -203,6 +199,9 @@ func decorateStreamLabel(id string) string {
 }
 
 func (s *streamListCol) Stop() {}
+
+// Crumb — the selected stream id for the breadcrumb.
+func (s *streamListCol) Crumb() string { return s.Selected() }
 
 func (s *streamListCol) fetch() tea.Cmd {
 	api := s.api
@@ -398,6 +397,14 @@ func (e *eventListCol) View(w, h int, active bool) string {
 
 func (e *eventListCol) Stop() {}
 
+// Crumb — short label for the selected event in the breadcrumb.
+func (e *eventListCol) Crumb() string {
+	if ev, ok := e.selectedEvent(); ok {
+		return fmt.Sprintf("v%d %s", ev.Version, truncate(ev.EventType, 24))
+	}
+	return ""
+}
+
 type eventListLoadedMsg struct {
 	streamID string
 	events   []streams.RecordedEvent
@@ -408,31 +415,33 @@ type eventListLoadedMsg struct {
 // Column 3 — event detail
 
 type eventDetailCol struct {
-	source *streams.RecordedEvent
+	source func() *streams.RecordedEvent
 }
 
-func newEventDetailCol() *eventDetailCol                          { return &eventDetailCol{} }
-func (e *eventDetailCol) Title() string                           { return "detail" }
-func (e *eventDetailCol) Init() tea.Cmd                           { return nil }
-func (e *eventDetailCol) Update(tea.Msg) (tea.Cmd, bool)          { return nil, false }
-func (e *eventDetailCol) SetParentSelection(string) tea.Cmd       { return nil }
-func (e *eventDetailCol) Move(int)                                {}
-func (e *eventDetailCol) SetFilter(string)                        {}
-func (e *eventDetailCol) GotoID(string) bool                      { return false }
-func (e *eventDetailCol) Stop()                                   {}
-func (e *eventDetailCol) set(ev *streams.RecordedEvent)           { e.source = ev }
+func newEventDetailCol(src func() *streams.RecordedEvent) *eventDetailCol {
+	return &eventDetailCol{source: src}
+}
+func (e *eventDetailCol) Title() string                     { return "detail" }
+func (e *eventDetailCol) Init() tea.Cmd                     { return nil }
+func (e *eventDetailCol) Update(tea.Msg) (tea.Cmd, bool)    { return nil, false }
+func (e *eventDetailCol) SetParentSelection(string) tea.Cmd { return nil }
+func (e *eventDetailCol) Move(int)                          {}
+func (e *eventDetailCol) SetFilter(string)                  {}
+func (e *eventDetailCol) GotoID(string) bool                { return false }
+func (e *eventDetailCol) Stop()                             {}
+func (e *eventDetailCol) Crumb() string                     { return "" } // leaf: no breadcrumb segment
 func (e *eventDetailCol) Selected() string {
-	if e.source == nil {
-		return ""
+	if ev := e.source(); ev != nil {
+		return ev.EventID
 	}
-	return e.source.EventID
+	return ""
 }
 
 func (e *eventDetailCol) View(w, h int, active bool) string {
-	if e.source == nil {
+	ev := e.source()
+	if ev == nil {
 		return emptyHint("select an event →")
 	}
-	ev := e.source
 	var b strings.Builder
 	b.WriteString(kvLine("type", ev.EventType) + "\n")
 	b.WriteString(kvLine("version", fmt.Sprintf("%d", ev.Version)) + "\n")

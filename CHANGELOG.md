@@ -7,6 +7,33 @@ Versioning: [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed — breadcrumb drill-down replaces the three-column ranger
+
+The drill modes (streams / subscriptions / snapshots) move from the
+fixed three-column miller-columns layout to a `k9s`-style breadcrumb
+drill-down:
+
+- The top bar is now a navigation path (`reckon ▸ store ▸ mode ▸ …`),
+  replacing the bottom mode strip. The mode is just a path segment.
+- The body shows a slim sibling rail + a wide child preview; the leaf
+  (event payload, snapshot data, sub detail) zooms to full width so the
+  JSON gets the room the three-column layout couldn't give it.
+- `l`/`enter` drills deeper, `h` drills out. `j`/`k`, `g`/`G`, `/`
+  filter and `:` goto are unchanged.
+- **stores** mode is unchanged — it keeps its 4-pane dashboard grid
+  (cluster topology + health is a dashboard, not a path).
+- **subscriptions** collapses from three panes (list / lag / info) to a
+  two-level drill (list → one detail pane combining info + live lag),
+  since lag and info are co-details of one selection, not a hierarchy.
+
+Internal: the leaf detail panes lost their `set()`/`SyncDetail`
+side-channel — each reads its parent's typed selection live through a
+closure, so there is no parent→leaf sync for the model to drive. The
+new `ranger.Drill` orchestrator reuses the existing `Column` interface
+and bordered, width-clamped renderer; `ranger.Ranger` (the grid) stays
+for cluster mode. Added a render-budget test for the drill layout
+mirroring the stores one.
+
 ## [0.4.0] - 2026-05-18
 
 ### Added — `/` filter and `:` goto
