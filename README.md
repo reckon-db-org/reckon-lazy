@@ -33,20 +33,9 @@ Breadcrumb drill-down, `k9s`-style. The top bar shows the navigation path (`reck
 | # | Mode | Drill path | Status |
 |---|---|---|---|
 | 1 | stores | 4-pane grid (top: stores ↔ store info; bottom: nodes ↔ node detail) | ✅ |
-| 2 | streams | streams → events → event detail → **causation walk** | ✅ |
+| 2 | streams | streams → events → event detail | ✅ |
 | 3 | subscriptions | subs → detail (info + live lag) | ✅ |
 | 4 | snapshots | streams → versions → data | ✅ |
-
-### Causation walk
-
-Causation is a graph, and the breadcrumb is a path — so from an event's
-detail you drill straight into its lineage. Press `l` on the detail to
-open the event's **causal links**: its single cause (▲) and its direct
-effects (▼), from `CausationService`. Select a link and `l` again to
-walk to *that* event's links — across streams — with the breadcrumb
-tracing the whole path (`… ▸ orders-42 v7 ▸ shipment-9 v0 ▸ …`). `h`
-walks back out. `e` opens whichever event the cursor is on. This is the
-one move the old three-column layout couldn't express.
 
 Boot lands on **stores** so the first thing you see is whether the cluster is healthy (leader, quorum, term, failed nodes per store) — it keeps its 4-pane dashboard grid rather than a drill path. Drill into data with `2`–`4`.
 

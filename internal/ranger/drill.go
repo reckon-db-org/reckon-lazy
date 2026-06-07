@@ -12,15 +12,6 @@ type Crumber interface {
 	Crumb() string
 }
 
-// Brancher is an optional Column extension for dynamic, unbounded
-// drilling (e.g. walking a causation graph). A column at the end of
-// the chain that can produce a child for its current selection
-// implements Child(); pressing `l`/enter there pushes the child onto
-// the stack. Returns (nil, false) when there is nothing to drill into.
-type Brancher interface {
-	Child() (Column, bool)
-}
-
 // Drill is a breadcrumb-style drill-down over the same Column chain
 // the Ranger drives, but it shows at most two panes — the focused
 // column as a slim sibling rail plus its child as a wide preview —
@@ -34,33 +25,14 @@ type Brancher interface {
 type Drill struct {
 	cols  []Column
 	focus int
-	// base is the length of the fixed chain passed to NewDrill.
-	// Columns at index >= base were pushed dynamically (Brancher) and
-	// are popped — and Stop()ed — when you drill back out of them.
-	base int
 }
 
 // NewDrill builds a Drill over an ordered column chain. cols[0] is
 // the root list; the last column is the leaf, rendered full-width
-// when focused. The chain length becomes the base: Brancher pushes
-// extend past it and pop back to it.
+// when focused.
 func NewDrill(cols ...Column) *Drill {
-	return &Drill{cols: cols, focus: 0, base: len(cols)}
+	return &Drill{cols: cols, focus: 0}
 }
-
-// Push appends a dynamically-built column (see Brancher), focuses it,
-// and returns its Init batched with a propagate so it fetches and
-// receives its parent selection.
-func (d *Drill) Push(col Column) tea.Cmd {
-	d.cols = append(d.cols, col)
-	d.focus = len(d.cols) - 1
-	return tea.Batch(col.Init(), d.propagate())
-}
-
-// Focused returns the column the cursor is currently on. Used by
-// callers that need the typed selection of the deepest level (e.g.
-// the editor handoff on a causation node).
-func (d *Drill) Focused() Column { return d.cols[d.focus] }
 
 // Init fans Init() out to every column.
 func (d *Drill) Init() tea.Cmd {
@@ -88,24 +60,10 @@ func (d *Drill) HandleKey(key string) (tea.Cmd, bool) {
 	case "l", "right", "enter":
 		if d.focus < last {
 			d.focus++
-			return d.propagate(), true
 		}
-		// At the last column: branch deeper if it can (dynamic push,
-		// e.g. a causation node yielding the selected neighbour).
-		if br, ok := d.cols[d.focus].(Brancher); ok {
-			if child, ok := br.Child(); ok {
-				return d.Push(child), true
-			}
-		}
-		return nil, true
+		return d.propagate(), true
 	case "h", "left":
-		switch {
-		case d.focus >= d.base:
-			// Pop a dynamically-pushed column and release it.
-			d.cols[d.focus].Stop()
-			d.cols = d.cols[:d.focus]
-			d.focus--
-		case d.focus > 0:
+		if d.focus > 0 {
 			d.focus--
 		}
 		return nil, true

@@ -27,24 +27,17 @@ type StreamsView struct {
 // BuildStreams returns a wired StreamsView bound to (client, store).
 // The detail leaf reads the selected event live through a closure
 // over eventsCol, so there is no parent→leaf side-channel to keep in
-// sync. The leaf is a ranger.Brancher: drilling past it (`l`) opens a
-// causation walk rooted at the displayed event.
+// sync.
 func BuildStreams(c *reckon.Client, store string) *StreamsView {
 	api := c.Streams(store)
-	causAPI := c.Causation(store)
 	streamsCol := newStreamListCol(api)
 	eventsCol := newEventListCol(api)
-	detailCol := newEventDetailCol(
-		func() *streams.RecordedEvent {
-			if ev, ok := eventsCol.selectedEvent(); ok {
-				return &ev
-			}
-			return nil
-		},
-		func(ev streams.RecordedEvent) ranger.Column {
-			return newEventNodeCol(causAPI, ev)
-		},
-	)
+	detailCol := newEventDetailCol(func() *streams.RecordedEvent {
+		if ev, ok := eventsCol.selectedEvent(); ok {
+			return &ev
+		}
+		return nil
+	})
 	return &StreamsView{
 		Drill:      ranger.NewDrill(streamsCol, eventsCol, detailCol),
 		streamsCol: streamsCol,
@@ -53,13 +46,9 @@ func BuildStreams(c *reckon.Client, store string) *StreamsView {
 	}
 }
 
-// FocusedEvent returns the event the cursor is on for the `e` editor
-// handoff: the selected causal neighbour when drilled into a causation
-// node, otherwise the highlighted event in the events list.
-func (v *StreamsView) FocusedEvent() (streams.RecordedEvent, bool) {
-	if n, ok := v.Drill.Focused().(*eventNodeCol); ok {
-		return n.selectedEvent()
-	}
+// SelectedEvent — currently-highlighted event in column 2, if any.
+// Used by the `e` editor handoff in the parent model.
+func (v *StreamsView) SelectedEvent() (streams.RecordedEvent, bool) {
 	return v.eventsCol.selectedEvent()
 }
 
@@ -427,11 +416,10 @@ type eventListLoadedMsg struct {
 
 type eventDetailCol struct {
 	source func() *streams.RecordedEvent
-	branch func(streams.RecordedEvent) ranger.Column
 }
 
-func newEventDetailCol(src func() *streams.RecordedEvent, branch func(streams.RecordedEvent) ranger.Column) *eventDetailCol {
-	return &eventDetailCol{source: src, branch: branch}
+func newEventDetailCol(src func() *streams.RecordedEvent) *eventDetailCol {
+	return &eventDetailCol{source: src}
 }
 func (e *eventDetailCol) Title() string                     { return "detail" }
 func (e *eventDetailCol) Init() tea.Cmd                     { return nil }
@@ -447,18 +435,6 @@ func (e *eventDetailCol) Selected() string {
 		return ev.EventID
 	}
 	return ""
-}
-
-// Child (ranger.Brancher) opens a causation walk rooted at the
-// displayed event when the user drills past the detail leaf.
-func (e *eventDetailCol) Child() (ranger.Column, bool) {
-	if e.branch == nil {
-		return nil, false
-	}
-	if ev := e.source(); ev != nil {
-		return e.branch(*ev), true
-	}
-	return nil, false
 }
 
 func (e *eventDetailCol) View(w, h int, active bool) string {
@@ -478,7 +454,6 @@ func (e *eventDetailCol) View(w, h int, active bool) string {
 	if ev.DataContentType != "" {
 		b.WriteString(kvLine("content", ev.DataContentType) + "\n")
 	}
-	b.WriteString(theme.RowDim.Render("l → causal links (▲ cause · ▼ effects)") + "\n")
 	b.WriteString("\n")
 	b.WriteString(theme.RowHeader.Render("data") + "\n")
 	b.WriteString(theme.RowValue.Render(prettyJSON(ev.Data, w)))
