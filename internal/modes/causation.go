@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"google.golang.org/grpc/status"
 
 	"codeberg.org/reckon-db-org/reckon-go/causation"
 	"codeberg.org/reckon-db-org/reckon-go/streams"
@@ -24,11 +25,18 @@ type eventNodeCol struct {
 	api   *causation.Client
 	event streams.RecordedEvent
 
-	rows     []causRow // cause (if any) first, then effects, in order
+	// cause and effects are resolved independently — one failing or
+	// timing out must not blank the other (the gateway collapses
+	// "no cause", timeout, and node-down all into NOT_FOUND, so a
+	// degraded backend would otherwise wipe the whole node).
+	cause      *streams.RecordedEvent
+	causeErr   error
+	effects    []streams.RecordedEvent
+	effectsErr error
+
+	rows     []causRow // selectable neighbours: cause (if any) then effects
 	selected int
 	loading  bool
-	loaded   bool
-	err      error
 }
 
 // causRow is one selectable neighbour of the node's event.
@@ -43,28 +51,40 @@ func newEventNodeCol(api *causation.Client, ev streams.RecordedEvent) *eventNode
 
 func (n *eventNodeCol) Title() string { return "causation" }
 
-// Init fetches the event's cause and effects in one command.
+// Init fetches the event's cause and effects concurrently, so a slow
+// or hung side can't starve the other of the shared deadline.
 func (n *eventNodeCol) Init() tea.Cmd {
 	api := n.api
 	id := n.event.EventID
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), shortRPCTimeout)
 		defer cancel()
-		cause, cerr := api.Cause(ctx, id)
-		effects, eerr := api.Effects(ctx, id)
-		err := cerr
-		if err == nil {
-			err = eerr
+		type cres struct {
+			ev  streams.RecordedEvent
+			err error
 		}
-		return causLoadedMsg{id: id, cause: cause, effects: effects, err: err}
+		type eres struct {
+			evs []streams.RecordedEvent
+			err error
+		}
+		cch, ech := make(chan cres, 1), make(chan eres, 1)
+		go func() { ev, err := api.Cause(ctx, id); cch <- cres{ev, err} }()
+		go func() { evs, err := api.Effects(ctx, id); ech <- eres{evs, err} }()
+		c, e := <-cch, <-ech
+		return causLoadedMsg{
+			id:    id,
+			cause: c.ev, causeErr: c.err,
+			effects: e.evs, effectsErr: e.err,
+		}
 	}
 }
 
 type causLoadedMsg struct {
-	id      string
-	cause   streams.RecordedEvent
-	effects []streams.RecordedEvent
-	err     error
+	id         string
+	cause      streams.RecordedEvent
+	causeErr   error
+	effects    []streams.RecordedEvent
+	effectsErr error
 }
 
 func (n *eventNodeCol) Update(msg tea.Msg) (tea.Cmd, bool) {
@@ -75,12 +95,20 @@ func (n *eventNodeCol) Update(msg tea.Msg) (tea.Cmd, bool) {
 	if m.id != n.event.EventID {
 		return nil, true // for another node on the stack
 	}
-	n.loading, n.loaded, n.err = false, true, m.err
-	n.rows = n.rows[:0]
-	if m.cause.EventID != "" {
-		n.rows = append(n.rows, causRow{effect: false, event: m.cause})
+	n.loading = false
+	n.causeErr, n.effectsErr = m.causeErr, m.effectsErr
+	n.cause = nil
+	if m.causeErr == nil && m.cause.EventID != "" {
+		ev := m.cause
+		n.cause = &ev
 	}
-	for _, ev := range m.effects {
+	n.effects = m.effects
+
+	n.rows = n.rows[:0]
+	if n.cause != nil {
+		n.rows = append(n.rows, causRow{effect: false, event: *n.cause})
+	}
+	for _, ev := range n.effects {
 		n.rows = append(n.rows, causRow{effect: true, event: ev})
 	}
 	n.selected = clamp(n.selected, 0, max(0, len(n.rows)-1))
@@ -130,11 +158,8 @@ func (n *eventNodeCol) Child() (ranger.Column, bool) {
 }
 
 func (n *eventNodeCol) View(w, h int, active bool) string {
-	switch {
-	case n.loading:
+	if n.loading {
 		return emptyHint("loading causation…")
-	case n.err != nil:
-		return errLine(n.err)
 	}
 
 	var b strings.Builder
@@ -160,27 +185,41 @@ func (n *eventNodeCol) View(w, h int, active bool) string {
 		row++
 	}
 
-	hasCause := len(n.rows) > 0 && !n.rows[0].effect
+	// Cause section — resolved independently of effects.
 	b.WriteString(theme.RowHeader.Render("▲ cause") + "\n")
-	if hasCause {
-		emit("▲", causEventLabel(n.rows[0].event))
-	} else {
+	switch {
+	case n.causeErr != nil:
+		// The gateway can't distinguish "no cause" from a transient
+		// failure (both are NOT_FOUND), so report it honestly.
+		b.WriteString(theme.RowDim.Render("  (unavailable — "+causReason(n.causeErr)+")") + "\n")
+	case n.cause == nil:
 		b.WriteString(theme.RowDim.Render("  (no recorded cause)") + "\n")
+	default:
+		emit("▲", causEventLabel(*n.cause))
 	}
 
-	effects := n.rows
-	if hasCause {
-		effects = n.rows[1:]
-	}
-	b.WriteString("\n" + theme.RowHeader.Render(fmt.Sprintf("▼ effects (%d)", len(effects))) + "\n")
-	if len(effects) == 0 {
+	// Effects section — resolved independently of cause.
+	b.WriteString("\n" + theme.RowHeader.Render(fmt.Sprintf("▼ effects (%d)", len(n.effects))) + "\n")
+	switch {
+	case n.effectsErr != nil:
+		b.WriteString(theme.RowDim.Render("  (unavailable — " + causReason(n.effectsErr) + ")"))
+	case len(n.effects) == 0:
 		b.WriteString(theme.RowDim.Render("  (no effects)"))
-	} else {
-		for _, r := range effects {
-			emit("▼", causEventLabel(r.event))
+	default:
+		for _, ev := range n.effects {
+			emit("▼", causEventLabel(ev))
 		}
 	}
 	return clip(b.String(), h)
+}
+
+// causReason renders a gRPC error compactly (status code name when
+// available, else the trimmed message).
+func causReason(err error) string {
+	if s, ok := status.FromError(err); ok {
+		return strings.ToLower(s.Code().String())
+	}
+	return truncate(err.Error(), 24)
 }
 
 func causEventLabel(ev streams.RecordedEvent) string {
