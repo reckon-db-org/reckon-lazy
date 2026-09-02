@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"codeberg.org/reckon-db-org/reckon-lazy/internal/theme"
+	"github.com/reckon-db-org/reckon-lazy/internal/theme"
 )
 
 const shortRPCTimeout = 5 * time.Second

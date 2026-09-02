@@ -5,7 +5,7 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 
-	"codeberg.org/reckon-db-org/reckon-lazy/internal/theme"
+	"github.com/reckon-db-org/reckon-lazy/internal/theme"
 )
 
 // HelpSection groups related key bindings for one part of the UI.

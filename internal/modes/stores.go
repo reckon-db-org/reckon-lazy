@@ -9,12 +9,12 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
-	reckon "codeberg.org/reckon-db-org/reckon-go"
-	"codeberg.org/reckon-db-org/reckon-go/genproto/gatewayv1"
-	"codeberg.org/reckon-db-org/reckon-go/stores"
-	"codeberg.org/reckon-db-org/reckon-lazy/internal/cluster"
-	"codeberg.org/reckon-db-org/reckon-lazy/internal/ranger"
-	"codeberg.org/reckon-db-org/reckon-lazy/internal/theme"
+	reckon "github.com/reckon-db-org/reckon-go"
+	"github.com/reckon-db-org/reckon-go/genproto/gatewayv1"
+	"github.com/reckon-db-org/reckon-go/stores"
+	"github.com/reckon-db-org/reckon-lazy/internal/cluster"
+	"github.com/reckon-db-org/reckon-lazy/internal/ranger"
+	"github.com/reckon-db-org/reckon-lazy/internal/theme"
 )
 
 // StoresView is a 4-pane grid built from two stacked 2-pane rangers:

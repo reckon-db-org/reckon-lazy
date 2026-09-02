@@ -7,6 +7,11 @@ Versioning: [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed — module path and reckon-go dependency moved to GitHub
+
+`module github.com/reckon-db-org/reckon-lazy`; depends on
+`github.com/reckon-db-org/reckon-go v0.10.0`. Nothing else changes.
+
 ### Changed — breadcrumb drill-down replaces the three-column ranger
 
 The drill modes (streams / subscriptions / snapshots) move from the

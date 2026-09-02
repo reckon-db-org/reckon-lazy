@@ -1,7 +1,7 @@
 # reckon-lazy
 [![Buy Me A Coffee](https://img.shields.io/badge/Buy%20Me%20A%20Coffee-support-yellow.svg)](https://buymeacoffee.com/rlefever)
 
-A terminal UI for the [ReckonDB](https://codeberg.org/reckon-db-org/reckon-db) event store, in the spirit of `lazygit` / `lazydocker` / `k9s` / `ranger`.
+A terminal UI for the [ReckonDB](https://github.com/reckon-db-org/reckon-db) event store, in the spirit of `lazygit` / `lazydocker` / `k9s` / `ranger`.
 
 The binary is named **`lazyreckon`** to fit the lazy-* family; the repo is `reckon-lazy` for org-naming consistency.
 
@@ -39,7 +39,7 @@ Breadcrumb drill-down, `k9s`-style. The top bar shows the navigation path (`reck
 
 Boot lands on **stores** so the first thing you see is whether the cluster is healthy (leader, quorum, term, failed nodes per store) — it keeps its 4-pane dashboard grid rather than a drill path. Drill into data with `2`–`4`.
 
-> **Note**: stores on reckon-db 3.1.1+ expose a `_dcb` pseudo-stream that holds [Dynamic Consistency Boundary](https://codeberg.org/reckon-db-org/reckon-db/src/branch/main/guides/dcb.md) events. It shows up in streams mode with a `DCB` badge so it's visually distinct from aggregate streams. The badge has no behavioural effect — you can browse `_dcb` like any other stream.
+> **Note**: stores on reckon-db 3.1.1+ expose a `_dcb` pseudo-stream that holds [Dynamic Consistency Boundary](https://github.com/reckon-db-org/reckon-db/blob/main/guides/dcb.md) events. It shows up in streams mode with a `DCB` badge so it's visually distinct from aggregate streams. The badge has no behavioural effect — you can browse `_dcb` like any other stream.
 
 ## Keys
 
@@ -91,7 +91,7 @@ cmd/lazyreckon/
 
 - [Bubble Tea](https://github.com/charmbracelet/bubbletea) — TUI runtime
 - [lipgloss](https://github.com/charmbracelet/lipgloss) — styling
-- [reckon-go](https://codeberg.org/reckon-db-org/reckon-go) — gRPC client
+- [reckon-go](https://github.com/reckon-db-org/reckon-go) — gRPC client
 
 ## Build
 

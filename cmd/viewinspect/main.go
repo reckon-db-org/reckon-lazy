@@ -13,9 +13,9 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 
-	reckon "codeberg.org/reckon-db-org/reckon-go"
-	"codeberg.org/reckon-db-org/reckon-lazy/internal/cluster"
-	"codeberg.org/reckon-db-org/reckon-lazy/internal/modes"
+	reckon "github.com/reckon-db-org/reckon-go"
+	"github.com/reckon-db-org/reckon-lazy/internal/cluster"
+	"github.com/reckon-db-org/reckon-lazy/internal/modes"
 )
 
 func main() {

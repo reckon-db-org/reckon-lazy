@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"codeberg.org/reckon-db-org/reckon-go/stores"
+	"github.com/reckon-db-org/reckon-go/stores"
 )
 
 // Topology tracks every (store_id, node) registration observed

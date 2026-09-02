@@ -9,7 +9,7 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 
-	"codeberg.org/reckon-db-org/reckon-lazy/internal/theme"
+	"github.com/reckon-db-org/reckon-lazy/internal/theme"
 )
 
 // Header renders the persistent top banner: glyph + wordmark + active

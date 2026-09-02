@@ -13,11 +13,11 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
-	reckon "codeberg.org/reckon-db-org/reckon-go"
-	"codeberg.org/reckon-db-org/reckon-go/genproto/gatewayv1"
-	"codeberg.org/reckon-db-org/reckon-lazy/internal/profiles"
-	"codeberg.org/reckon-db-org/reckon-lazy/internal/theme"
-	"codeberg.org/reckon-db-org/reckon-lazy/internal/ui"
+	reckon "github.com/reckon-db-org/reckon-go"
+	"github.com/reckon-db-org/reckon-go/genproto/gatewayv1"
+	"github.com/reckon-db-org/reckon-lazy/internal/profiles"
+	"github.com/reckon-db-org/reckon-lazy/internal/theme"
+	"github.com/reckon-db-org/reckon-lazy/internal/ui"
 )
 
 // Result is what the picker returns after the user picks something

@@ -1,9 +1,9 @@
-module codeberg.org/reckon-db-org/reckon-lazy
+module github.com/reckon-db-org/reckon-lazy
 
 go 1.24.2
 
 require (
-	codeberg.org/reckon-db-org/reckon-go v0.8.0
+	github.com/reckon-db-org/reckon-go v0.8.0
 	github.com/BurntSushi/toml v1.6.0
 	github.com/charmbracelet/bubbles v1.0.0
 	github.com/charmbracelet/bubbletea v1.3.10

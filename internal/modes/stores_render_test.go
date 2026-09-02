@@ -7,8 +7,8 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 
-	"codeberg.org/reckon-db-org/reckon-go/stores"
-	"codeberg.org/reckon-db-org/reckon-lazy/internal/cluster"
+	"github.com/reckon-db-org/reckon-go/stores"
+	"github.com/reckon-db-org/reckon-lazy/internal/cluster"
 )
 
 // fourTenantTopo mirrors the live parksim fleet: four single-mode

@@ -6,7 +6,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	reckon "codeberg.org/reckon-db-org/reckon-go"
+	reckon "github.com/reckon-db-org/reckon-go"
 )
 
 // newTestModel builds a real model against a lazy (never-dialed) gRPC

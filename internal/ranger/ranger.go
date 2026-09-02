@@ -6,7 +6,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
-	"codeberg.org/reckon-db-org/reckon-lazy/internal/theme"
+	"github.com/reckon-db-org/reckon-lazy/internal/theme"
 )
 
 // Ranger holds a list of columns (2 or 3) and drives the

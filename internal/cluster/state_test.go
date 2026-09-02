@@ -4,7 +4,7 @@ import (
 	"reflect"
 	"testing"
 
-	"codeberg.org/reckon-db-org/reckon-go/stores"
+	"github.com/reckon-db-org/reckon-go/stores"
 )
 
 // --- Topology aggregation ------------------------------------------
