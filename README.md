@@ -14,6 +14,12 @@ go install github.com/reckon-db-org/reckon-lazy/cmd/lazyreckon@latest
 Needs Go 1.24 or later. Use 0.5.0 or later: v0.4.0 declares the old
 `codeberg.org` module path and cannot be installed by this one.
 
+Run bare `lazyreckon` and it opens a profile picker over the endpoints you
+have saved. `--endpoint host:port` connects directly, `--save-as NAME` saves
+that endpoint as a profile, and `--profile NAME` skips the picker. Profiles
+live in `$XDG_CONFIG_HOME/lazyreckon/profiles.toml` (falling back to
+`~/.config/lazyreckon/profiles.toml`).
+
 ```bash
 lazyreckon --endpoint beam01.lab:50051
 ```
@@ -92,8 +98,13 @@ internal/
   ranger/     column interface + renderer; Ranger (grid) + Drill (breadcrumb)
   modes/      one wired view per mode (Drill chain, or the cluster grid)
   editor/     $EDITOR handoff via tea.ExecProcess
+  cluster/    cluster topology and health state for stores mode
+  profiles/   saved endpoint profiles (profiles.toml)
+  splash/     the profile picker shown by a bare `lazyreckon`
 cmd/lazyreckon/
   main.go     top-level model + key routing
+cmd/btrepro/, cmd/viewinspect/
+              developer tools for layout and width audits
 ```
 
 ## Stack

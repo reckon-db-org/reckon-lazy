@@ -37,3 +37,6 @@ require (
 	google.golang.org/grpc v1.66.0 // indirect
 	google.golang.org/protobuf v1.34.2 // indirect
 )
+
+// Published under the old codeberg.org module path; not installable by this one.
+retract [v0.1.0, v0.4.0]

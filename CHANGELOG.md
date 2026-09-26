@@ -18,6 +18,17 @@ github.com/reckon-db-org/reckon-lazy". 0.5.0 declares
 `module github.com/reckon-db-org/reckon-lazy` and installs by that path. The
 README now says how.
 
+### Changed — v0.1.0 to v0.4.0 are retracted
+
+`go.mod` retracts `[v0.1.0, v0.4.0]`: they declare the old codeberg.org module
+path and cannot be installed by the github.com one. `go list -m -versions`
+now shows only installable versions, and `@latest` cannot resolve to them.
+
+### Changed — LICENSE carries the full Apache-2.0 text
+
+It held only the Apache header notice, so GitHub reported the licence as
+"Other".
+
 ### Added — CI
 
 Every push and pull request runs gofmt, `go vet`, `go build` and `go test` on
@@ -28,8 +39,8 @@ e2e suite stays behind its `e2e` build tag.
 ### Removed — two built binaries from the repository
 
 `btrepro` and `viewinspect` (21 MB together) had been committed in the
-repository root. The module zip carries every file, so each `go install`
-downloaded them. Their sources stay in `cmd/`.
+repository root after v0.4.0. The module zip carries every file, so 0.5.0
+would have shipped them to every `go install`. Their sources stay in `cmd/`.
 
 ### Changed — module path and reckon-go dependency moved to GitHub
 
@@ -76,8 +87,8 @@ is not mistaken for an aggregate stream.
 - The first frame waits for the real terminal size, the frame is clamped to
   exactly the terminal height, and the screen is cleared per frame, so the
   view no longer overflows, leaves gaps or scrolls on start.
-- The status bar and the mode strip no longer wrap on narrow terminals, and
-  pane content is clamped to its width.
+- The status bar no longer wraps on narrow terminals, and pane content is
+  clamped to its width.
 
 ### Tests
 
