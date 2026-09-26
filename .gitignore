@@ -1,5 +1,7 @@
-# Built binary
+# Built binaries (go build ./cmd/... in the root)
 /lazyreckon
+/btrepro
+/viewinspect
 /bin/
 /dist/
 

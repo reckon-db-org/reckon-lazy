@@ -25,6 +25,12 @@ the Go version `go.mod` names, and refuses a `go.mod` whose module path
 differs from the repository, the check that would have caught v0.4.0. The
 e2e suite stays behind its `e2e` build tag.
 
+### Removed — two built binaries from the repository
+
+`btrepro` and `viewinspect` (21 MB together) had been committed in the
+repository root. The module zip carries every file, so each `go install`
+downloaded them. Their sources stay in `cmd/`.
+
 ### Changed — module path and reckon-go dependency moved to GitHub
 
 `module github.com/reckon-db-org/reckon-lazy`; depends on
