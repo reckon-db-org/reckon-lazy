@@ -42,8 +42,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 var (
-	bar     = lipgloss.NewStyle().Background(lipgloss.Color("57")).Foreground(lipgloss.Color("231")).Padding(0, 1)
-	keyTag  = lipgloss.NewStyle().Background(lipgloss.Color("57")).Foreground(lipgloss.Color("46")).Bold(true)
+	bar    = lipgloss.NewStyle().Background(lipgloss.Color("57")).Foreground(lipgloss.Color("231")).Padding(0, 1)
+	keyTag = lipgloss.NewStyle().Background(lipgloss.Color("57")).Foreground(lipgloss.Color("46")).Bold(true)
 )
 
 // statusBar mimics lazyreckon's: many small styled segments concatenated

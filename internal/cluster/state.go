@@ -37,17 +37,17 @@ type Topology struct {
 // for the focused store; read by both cluster mode columns + the
 // header.
 type StoreHealth struct {
-	Leader        string // e.g. "reckon_gateway@192.168.1.12", "" if unknown
-	Term          int64  // Raft term; 0 if unknown
-	HasQuorum     bool
-	NodesUp       int
-	NodesTotal    int
-	MaxCommitLag  int64
-	FailedNodes   []string
-	OK            bool   // overall status (healthy vs split-brain/etc)
-	Status        string // "healthy", "split_brain", ...
-	LastProbed    time.Time
-	LastProbeErr  error
+	Leader       string // e.g. "reckon_gateway@192.168.1.12", "" if unknown
+	Term         int64  // Raft term; 0 if unknown
+	HasQuorum    bool
+	NodesUp      int
+	NodesTotal   int
+	MaxCommitLag int64
+	FailedNodes  []string
+	OK           bool   // overall status (healthy vs split-brain/etc)
+	Status       string // "healthy", "split_brain", ...
+	LastProbed   time.Time
+	LastProbeErr error
 }
 
 // New returns an empty Topology ready for use.

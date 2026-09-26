@@ -81,7 +81,7 @@ func stripANSI(s string) string {
 			continue
 		}
 		if inEsc {
-			if (r >= '@' && r <= '~') {
+			if r >= '@' && r <= '~' {
 				inEsc = false
 			}
 			continue

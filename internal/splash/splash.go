@@ -497,7 +497,7 @@ func runTest(name, endpoint string) tea.Cmd {
 			return testResultMsg{name: name, err: err}
 		}
 		return testResultMsg{
-			name:   name,
+			name: name,
 			detail: fmt.Sprintf("gw %s · db %s",
 				resp.GetReckonGatewayVersion(),
 				resp.GetReckonDbVersion()),
