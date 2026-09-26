@@ -5,6 +5,15 @@ A terminal UI for the [ReckonDB](https://github.com/reckon-db-org/reckon-db) eve
 
 The binary is named **`lazyreckon`** to fit the lazy-* family; the repo is `reckon-lazy` for org-naming consistency.
 
+## Install
+
+```bash
+go install github.com/reckon-db-org/reckon-lazy/cmd/lazyreckon@latest
+```
+
+Needs Go 1.24 or later. Use 0.5.0 or later: v0.4.0 declares the old
+`codeberg.org` module path and cannot be installed by this one.
+
 ```bash
 lazyreckon --endpoint beam01.lab:50051
 ```

@@ -5,12 +5,31 @@ All notable changes to `reckon-lazy` (binary: `lazyreckon`) will be documented i
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 Versioning: [SemVer](https://semver.org/).
 
-## [Unreleased]
+## [0.5.0] - 2026-09-26
+
+### Fixed — lazyreckon could not be installed
+
+The only tag, v0.4.0, declares `module codeberg.org/reckon-db-org/reckon-lazy`,
+and the Codeberg repositories are gone, so
+`go install github.com/reckon-db-org/reckon-lazy/cmd/lazyreckon@latest`
+failed for everyone with "module declares its path as
+codeberg.org/reckon-db-org/reckon-lazy but was required as
+github.com/reckon-db-org/reckon-lazy". 0.5.0 declares
+`module github.com/reckon-db-org/reckon-lazy` and installs by that path. The
+README now says how.
+
+### Added — CI
+
+Every push and pull request runs gofmt, `go vet`, `go build` and `go test` on
+the Go version `go.mod` names, and refuses a `go.mod` whose module path
+differs from the repository, the check that would have caught v0.4.0. The
+e2e suite stays behind its `e2e` build tag.
 
 ### Changed — module path and reckon-go dependency moved to GitHub
 
 `module github.com/reckon-db-org/reckon-lazy`; depends on
-`github.com/reckon-db-org/reckon-go v0.10.0`. Nothing else changes.
+`github.com/reckon-db-org/reckon-go v0.10.0` (from v0.1.0, by way of v0.4.0 and
+v0.8.0).
 
 ### Changed — breadcrumb drill-down replaces the three-column ranger
 
@@ -38,6 +57,26 @@ new `ranger.Drill` orchestrator reuses the existing `Column` interface
 and bordered, width-clamped renderer; `ranger.Ranger` (the grid) stays
 for cluster mode. Added a render-budget test for the drill layout
 mirroring the stores one.
+
+### Added — the `_dcb` pseudo-stream is badged in streams mode
+
+DCB events live in the `_dcb` pseudo-stream; the streams list marks it so it
+is not mistaken for an aggregate stream.
+
+### Fixed
+
+- Streams, subscriptions and snapshots modes bind to the active store on
+  entry; they could show the previous store's data after switching.
+- The first frame waits for the real terminal size, the frame is clamped to
+  exactly the terminal height, and the screen is cleared per frame, so the
+  view no longer overflows, leaves gaps or scrolls on start.
+- The status bar and the mode strip no longer wrap on narrow terminals, and
+  pane content is clamped to its width.
+
+### Tests
+
+Unit tests for the cluster view, and an e2e chain against a live gateway
+(`go test -tags e2e ./e2e`, `RECKON_E2E_ENDPOINT`).
 
 ## [0.4.0] - 2026-05-18
 
