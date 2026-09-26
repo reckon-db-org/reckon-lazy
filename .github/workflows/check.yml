@@ -1,0 +1,61 @@
+# Every push and pull request: formatting, vet, build and the unit tests, on
+# the Go version go.mod names. A public repository, so GitHub-hosted runners.
+#
+# The e2e suite (e2e/, build tag `e2e`) needs a live reckon-gateway and is
+# not part of `go test ./...`; run it by hand against a store.
+#
+# There is no publish step: a Go module is released by pushing its v* tag,
+# and the module proxy fetches it from here on the first `go install`.
+name: check
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: gofmt
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "::error::not gofmt-formatted:"
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: go build
+        run: go build ./...
+
+      - name: go test
+        run: go test ./...
+
+      # The module path must match the repository path, or `go install
+      # github.com/reckon-db-org/reckon-lazy/...@version` fails with
+      # "module declares its path as ...". v0.4.0 shipped with the old
+      # codeberg.org path and could not be installed at all.
+      - name: module path matches the repository
+        run: |
+          got=$(go list -m)
+          want="github.com/${GITHUB_REPOSITORY}"
+          if [ "$got" != "$want" ]; then
+            echo "::error::go.mod declares $got, the repository is $want"
+            exit 1
+          fi
