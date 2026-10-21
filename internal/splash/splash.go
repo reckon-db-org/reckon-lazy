@@ -108,13 +108,36 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case modeConfirmDelete:
 		return m.handleConfirmKey(msg)
 	}
+	return m.handleListKey(msg.String())
+}
 
-	// List mode
-	switch msg.String() {
+// handleListKey is list mode: move, choose, delete, and the forms that add,
+// rename or test a profile.
+func (m *Model) handleListKey(key string) (tea.Model, tea.Cmd) {
+	switch key {
 	case "q", "ctrl+c", "esc":
 		m.result = Result{Cancelled: true}
 		return m, tea.Quit
+	case "j", "down", "k", "up", "g", "home", "G", "end":
+		m.moveCursor(key)
+	case "enter":
+		return m.choose()
+	case "n":
+		m.startAdding()
+	case "r":
+		m.startRenaming()
+	case "d":
+		if _, ok := m.selected(); ok {
+			m.mode = modeConfirmDelete
+		}
+	case "t":
+		return m.runSelectedTest()
+	}
+	return m, nil
+}
 
+func (m *Model) moveCursor(key string) {
+	switch key {
 	case "j", "down":
 		if m.cursor < len(m.store.Profiles)-1 {
 			m.cursor++
@@ -127,44 +150,50 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.cursor = 0
 	case "G", "end":
 		m.cursor = max(0, len(m.store.Profiles)-1)
-
-	case "enter":
-		if p, ok := m.selected(); ok {
-			m.result = Result{Selected: &p}
-			return m, tea.Quit
-		}
-
-	case "n":
-		m.startForm(form{
-			name:     newInput("name (e.g. beam-lab)", "", 40),
-			endpoint: newInput("endpoint (host:port)", "", 40),
-			focused:  0,
-		})
-		m.mode = modeAdding
-
-	case "r":
-		if p, ok := m.selected(); ok {
-			m.startForm(form{
-				name:     newInput("new name", p.Name, 40),
-				endpoint: newInput("endpoint", p.Endpoint, 40),
-				focused:  0,
-				original: p.Name,
-			})
-			m.mode = modeRenaming
-		}
-
-	case "d":
-		if _, ok := m.selected(); ok {
-			m.mode = modeConfirmDelete
-		}
-
-	case "t":
-		if p, ok := m.selected(); ok {
-			m.tests[p.Name] = testResult{pending: true}
-			return m, runTest(p.Name, p.Endpoint)
-		}
 	}
-	return m, nil
+}
+
+// choose takes the highlighted profile and quits with it.
+func (m *Model) choose() (tea.Model, tea.Cmd) {
+	p, ok := m.selected()
+	if !ok {
+		return m, nil
+	}
+	m.result = Result{Selected: &p}
+	return m, tea.Quit
+}
+
+func (m *Model) startAdding() {
+	m.startForm(form{
+		name:     newInput("name (e.g. beam-lab)", "", 40),
+		endpoint: newInput("endpoint (host:port)", "", 40),
+		focused:  0,
+	})
+	m.mode = modeAdding
+}
+
+func (m *Model) startRenaming() {
+	p, ok := m.selected()
+	if !ok {
+		return
+	}
+	m.startForm(form{
+		name:     newInput("new name", p.Name, 40),
+		endpoint: newInput("endpoint", p.Endpoint, 40),
+		focused:  0,
+		original: p.Name,
+	})
+	m.mode = modeRenaming
+}
+
+// runSelectedTest starts the health test for the highlighted profile.
+func (m *Model) runSelectedTest() (tea.Model, tea.Cmd) {
+	p, ok := m.selected()
+	if !ok {
+		return m, nil
+	}
+	m.tests[p.Name] = testResult{pending: true}
+	return m, runTest(p.Name, p.Endpoint)
 }
 
 func (m *Model) handleFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -215,50 +244,62 @@ func (m *Model) submitForm() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	switch m.mode {
-	case modeAdding:
-		if err := m.store.Add(profiles.Profile{Name: name, Endpoint: ep}); err != nil {
-			m.notice = "add: " + err.Error()
-			return m, nil
-		}
-		if err := m.store.Save(); err != nil {
-			m.notice = "save: " + err.Error()
-			return m, nil
-		}
-		m.notice = "added " + name
-		// Move cursor to the new entry.
-		for i, p := range m.store.Profiles {
-			if p.Name == name {
-				m.cursor = i
-				break
-			}
-		}
-
-	case modeRenaming:
-		if name != m.form.original {
-			if err := m.store.Rename(m.form.original, name); err != nil {
-				m.notice = "rename: " + err.Error()
-				return m, nil
-			}
-		}
-		// Find the (possibly renamed) profile and update endpoint
-		// if changed.
-		for i, p := range m.store.Profiles {
-			if p.Name == name {
-				m.store.Profiles[i].Endpoint = ep
-				m.cursor = i
-				break
-			}
-		}
-		if err := m.store.Save(); err != nil {
-			m.notice = "save: " + err.Error()
-			return m, nil
-		}
-		m.notice = "saved " + name
+	added := true
+	if m.mode == modeAdding {
+		added = m.addProfile(name, ep)
+	} else {
+		added = m.renameProfile(name, ep)
 	}
-
+	if !added {
+		return m, nil
+	}
 	m.mode = modeList
 	return m, nil
+}
+
+// addProfile adds and saves, then moves the cursor onto the new entry. It
+// reports whether the profile was saved; a failure is in m.notice.
+func (m *Model) addProfile(name, ep string) bool {
+	if err := m.store.Add(profiles.Profile{Name: name, Endpoint: ep}); err != nil {
+		m.notice = "add: " + err.Error()
+		return false
+	}
+	if err := m.store.Save(); err != nil {
+		m.notice = "save: " + err.Error()
+		return false
+	}
+	m.notice = "added " + name
+	for i, p := range m.store.Profiles {
+		if p.Name == name {
+			m.cursor = i
+			break
+		}
+	}
+	return true
+}
+
+// renameProfile renames when the name changed and sets the endpoint either way.
+// It reports whether the change was saved; a failure is in m.notice.
+func (m *Model) renameProfile(name, ep string) bool {
+	if name != m.form.original {
+		if err := m.store.Rename(m.form.original, name); err != nil {
+			m.notice = "rename: " + err.Error()
+			return false
+		}
+	}
+	for i, p := range m.store.Profiles {
+		if p.Name == name {
+			m.store.Profiles[i].Endpoint = ep
+			m.cursor = i
+			break
+		}
+	}
+	if err := m.store.Save(); err != nil {
+		m.notice = "save: " + err.Error()
+		return false
+	}
+	m.notice = "saved " + name
+	return true
 }
 
 func (m *Model) startForm(f form) {

@@ -261,67 +261,85 @@ func (m *model) handleKey(key string) (tea.Model, tea.Cmd) {
 		return m.handleCmdKey(key)
 	}
 
+	if handled, mm, cmd := m.handleGlobalKey(key); handled {
+		return mm, cmd
+	}
+	return m, m.delegateKey(key)
+}
+
+// handleGlobalKey is the keys that belong to the screen rather than to a
+// column: quit, help, the command bar, the four modes, enter, edit and refresh.
+// Anything it does not claim goes to the active column.
+func (m *model) handleGlobalKey(key string) (bool, tea.Model, tea.Cmd) {
 	switch key {
 	case "q", "ctrl+c":
 		m.shutdown()
-		return m, tea.Quit
-
+		return true, m, tea.Quit
 	case "?":
 		m.showHelp = true
-		return m, nil
-
+		return true, m, nil
 	case "/":
-		m.cmdMode = cmdFilter
-		m.cmdBuf = ""
-		m.cmdMsg = ""
-		// Apply empty filter so any previous one clears as the user starts typing.
-		_ = m.activeFilterTarget().SetFilter("")
-		return m, nil
-
+		return true, m, m.startFilter()
 	case ":":
-		m.cmdMode = cmdGoto
-		m.cmdBuf = ""
-		m.cmdMsg = ""
-		return m, nil
-
+		return true, m, m.startGoto()
 	case "1":
 		m.mode = modeStores
-		return m, m.stores.HealthProbeCmd()
+		return true, m, m.stores.HealthProbeCmd()
 	case "2":
 		m.mode = modeStreams
-		return m, m.bindStreamsToActive()
+		return true, m, m.bindStreamsToActive()
 	case "3":
 		m.mode = modeSubscriptions
-		return m, m.bindSubsToActive()
+		return true, m, m.bindSubsToActive()
 	case "4":
 		m.mode = modeSnapshots
-		return m, m.bindSnapsToActive()
-
+		return true, m, m.bindSnapsToActive()
 	case "enter":
-		// In cluster mode with the stores ranger focused on its
-		// list column, enter is "open this store in streams mode".
-		// Elsewhere enter falls through to ranger semantics (= l).
-		if m.mode == modeStores &&
-			m.stores.IsStoresFocused() &&
-			m.stores.SelectedStore() != "" {
-			return m, m.jumpToStreams(m.stores.SelectedStore())
-		}
-
+		return m.openFocusedStore()
 	case "e":
-		return m, m.editSelected()
-
+		return true, m, m.editSelected()
 	case "r":
-		return m, m.refresh()
+		return true, m, m.refresh()
 	}
+	return false, m, nil
+}
 
-	// Delegate the rest to the active mode.
-	var cmd tea.Cmd
-	if m.mode == modeStores {
-		cmd, _ = m.stores.HandleKey(key)
-	} else {
-		cmd, _ = m.activeDrill().HandleKey(key)
+// openFocusedStore is enter's special case: in cluster mode with the stores
+// ranger focused on its list column, enter opens that store in streams mode.
+// Elsewhere enter falls through to ranger semantics (= l).
+func (m *model) openFocusedStore() (bool, tea.Model, tea.Cmd) {
+	if m.mode == modeStores &&
+		m.stores.IsStoresFocused() &&
+		m.stores.SelectedStore() != "" {
+		return true, m, m.jumpToStreams(m.stores.SelectedStore())
 	}
-	return m, cmd
+	return false, m, nil
+}
+
+func (m *model) startFilter() tea.Cmd {
+	m.cmdMode = cmdFilter
+	m.cmdBuf = ""
+	m.cmdMsg = ""
+	// Apply empty filter so any previous one clears as the user starts typing.
+	_ = m.activeFilterTarget().SetFilter("")
+	return nil
+}
+
+func (m *model) startGoto() tea.Cmd {
+	m.cmdMode = cmdGoto
+	m.cmdBuf = ""
+	m.cmdMsg = ""
+	return nil
+}
+
+// delegateKey hands an unclaimed key to the active column.
+func (m *model) delegateKey(key string) tea.Cmd {
+	if m.mode == modeStores {
+		cmd, _ := m.stores.HandleKey(key)
+		return cmd
+	}
+	cmd, _ := m.activeDrill().HandleKey(key)
+	return cmd
 }
 
 // activeFilterTarget returns the filter/goto target for the current
@@ -342,46 +360,57 @@ func (m *model) handleCmdKey(key string) (tea.Model, tea.Cmd) {
 	rg := m.activeFilterTarget()
 	switch key {
 	case "esc", "ctrl+c":
-		if m.cmdMode == cmdFilter {
-			_ = rg.SetFilter("")
-		}
-		m.cmdMode = cmdNone
-		m.cmdBuf = ""
-		m.cmdMsg = ""
-		return m, nil
-
+		m.cancelCmd(rg)
 	case "enter":
-		mode := m.cmdMode
-		buf := m.cmdBuf
-		m.cmdMode = cmdNone
-		m.cmdBuf = ""
-		if mode == cmdGoto && buf != "" {
-			if _, hit := rg.GotoID(buf); !hit {
-				m.cmdMsg = "no match for: " + buf
-			} else {
-				m.cmdMsg = ""
-			}
-		}
-		return m, nil
-
+		m.commitCmd(rg)
 	case "backspace":
-		if len(m.cmdBuf) > 0 {
-			m.cmdBuf = m.cmdBuf[:len(m.cmdBuf)-1]
-		}
-		if m.cmdMode == cmdFilter {
-			_ = rg.SetFilter(m.cmdBuf)
-		}
-		return m, nil
-	}
-
-	// Printable input: append to buffer, live-apply for filter mode.
-	if isPrintable(key) {
-		m.cmdBuf += key
-		if m.cmdMode == cmdFilter {
-			_ = rg.SetFilter(m.cmdBuf)
+		m.backspaceCmd(rg)
+	default:
+		if isPrintable(key) {
+			m.cmdBuf += key
+			m.applyFilter(rg)
 		}
 	}
 	return m, nil
+}
+
+// cancelCmd closes the bar and, for a filter, clears it as it goes.
+func (m *model) cancelCmd(rg filterTarget) {
+	if m.cmdMode == cmdFilter {
+		_ = rg.SetFilter("")
+	}
+	m.cmdMode = cmdNone
+	m.cmdBuf = ""
+	m.cmdMsg = ""
+}
+
+// commitCmd closes the bar; for goto it says whether the id was found.
+func (m *model) commitCmd(rg filterTarget) {
+	mode, buf := m.cmdMode, m.cmdBuf
+	m.cmdMode = cmdNone
+	m.cmdBuf = ""
+	if mode != cmdGoto || buf == "" {
+		return
+	}
+	if _, hit := rg.GotoID(buf); hit {
+		m.cmdMsg = ""
+		return
+	}
+	m.cmdMsg = "no match for: " + buf
+}
+
+func (m *model) backspaceCmd(rg filterTarget) {
+	if len(m.cmdBuf) > 0 {
+		m.cmdBuf = m.cmdBuf[:len(m.cmdBuf)-1]
+	}
+	m.applyFilter(rg)
+}
+
+// applyFilter re-applies the buffer while a filter is being typed.
+func (m *model) applyFilter(rg filterTarget) {
+	if m.cmdMode == cmdFilter {
+		_ = rg.SetFilter(m.cmdBuf)
+	}
 }
 
 func isPrintable(k string) bool {
@@ -841,33 +870,50 @@ func run(endpointFlag, profileFlag, saveAs string) error {
 func resolveEndpoint(store *profiles.Store, endpointFlag, profileFlag, saveAs string) (endpoint, name string, err error) {
 	switch {
 	case endpointFlag != "":
-		if saveAs != "" {
-			if err := profiles.ValidateName(saveAs); err != nil {
-				return "", "", fmt.Errorf("--save-as: %w", err)
-			}
-			if err := profiles.ValidateEndpoint(endpointFlag); err != nil {
-				return "", "", fmt.Errorf("--endpoint: %w", err)
-			}
-			if err := store.Add(profiles.Profile{Name: saveAs, Endpoint: endpointFlag}); err != nil {
-				return "", "", fmt.Errorf("save profile: %w", err)
-			}
-			if err := store.Save(); err != nil {
-				return "", "", fmt.Errorf("save profiles: %w", err)
-			}
-			return endpointFlag, saveAs, nil
-		}
-		return endpointFlag, "", nil
-
+		return endpointFromFlag(store, endpointFlag, saveAs)
 	case profileFlag != "":
-		p, err := store.Find(profileFlag)
-		if err != nil {
-			return "", "", fmt.Errorf("profile %q: %w", profileFlag, err)
-		}
-		return p.Endpoint, p.Name, nil
-
+		return endpointFromProfile(store, profileFlag)
 	default:
 		return runSplash(store)
 	}
+}
+
+// endpointFromFlag takes the endpoint on the command line, saving it as a named
+// profile when --save-as asks for one.
+func endpointFromFlag(store *profiles.Store, endpointFlag, saveAs string) (endpoint, name string, err error) {
+	if saveAs == "" {
+		return endpointFlag, "", nil
+	}
+	if err := saveProfile(store, saveAs, endpointFlag); err != nil {
+		return "", "", err
+	}
+	return endpointFlag, saveAs, nil
+}
+
+// saveProfile checks the pair before writing it, so a bad name never leaves a
+// half-saved profiles file behind.
+func saveProfile(store *profiles.Store, name, endpoint string) error {
+	if err := profiles.ValidateName(name); err != nil {
+		return fmt.Errorf("--save-as: %w", err)
+	}
+	if err := profiles.ValidateEndpoint(endpoint); err != nil {
+		return fmt.Errorf("--endpoint: %w", err)
+	}
+	if err := store.Add(profiles.Profile{Name: name, Endpoint: endpoint}); err != nil {
+		return fmt.Errorf("save profile: %w", err)
+	}
+	if err := store.Save(); err != nil {
+		return fmt.Errorf("save profiles: %w", err)
+	}
+	return nil
+}
+
+func endpointFromProfile(store *profiles.Store, profileFlag string) (endpoint, name string, err error) {
+	p, err := store.Find(profileFlag)
+	if err != nil {
+		return "", "", fmt.Errorf("profile %q: %w", profileFlag, err)
+	}
+	return p.Endpoint, p.Name, nil
 }
 
 func runSplash(store *profiles.Store) (endpoint, name string, err error) {

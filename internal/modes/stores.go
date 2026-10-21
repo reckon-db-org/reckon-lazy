@@ -462,7 +462,17 @@ func (s *storesCol) View(w, h int, active bool) string {
 		return emptyHint("discovering stores…")
 	}
 
-	// Pad ids to the longest, capped to fit a trailing chip.
+	idW := idWidth(w, all)
+	rows := make([]string, len(all))
+	for i, id := range all {
+		rows[i] = s.storeRow(id, idW)
+	}
+	return renderList(rows, s.selectedIndex(all), w, h, active)
+}
+
+// idWidth pads ids to the longest one, capped so a row still fits a trailing
+// chip, and never narrower than eight columns.
+func idWidth(w int, all []string) int {
 	idW := longestLen(all)
 	if cap := w - 14; idW > cap && cap > 0 {
 		idW = cap
@@ -470,34 +480,36 @@ func (s *storesCol) View(w, h int, active bool) string {
 	if idW < 8 {
 		idW = 8
 	}
+	return idW
+}
 
-	selIdx := 0
+func (s *storesCol) selectedIndex(all []string) int {
 	for i, id := range all {
 		if id == s.selectedID {
-			selIdx = i
-			break
+			return i
 		}
 	}
+	return 0
+}
 
-	rows := make([]string, len(all))
-	for i, id := range all {
-		nodes := s.topo.NodeCountFor(id)
-		hp := s.topo.Health(id)
-		dot := theme.RowDim.Inline(true).Render("·")
-		if !hp.LastProbed.IsZero() {
-			if hp.OK {
-				dot = theme.BadgeOK.Inline(true).Render("●")
-			} else {
-				dot = theme.BadgeError.Inline(true).Render("●")
-			}
-		}
-		rows[i] = fmt.Sprintf("%s %s %s",
-			dot,
-			padRight(id, idW),
-			theme.RowDim.Inline(true).Render(fmt.Sprintf("%d node(s)", nodes)),
-		)
+func (s *storesCol) storeRow(id string, idW int) string {
+	return fmt.Sprintf("%s %s %s",
+		s.healthDot(id),
+		padRight(id, idW),
+		theme.RowDim.Inline(true).Render(fmt.Sprintf("%d node(s)", s.topo.NodeCountFor(id))),
+	)
+}
+
+// healthDot is dim until the first probe, then green or red.
+func (s *storesCol) healthDot(id string) string {
+	hp := s.topo.Health(id)
+	if hp.LastProbed.IsZero() {
+		return theme.RowDim.Inline(true).Render("·")
 	}
-	return renderList(rows, selIdx, w, h, active)
+	if hp.OK {
+		return theme.BadgeOK.Inline(true).Render("●")
+	}
+	return theme.BadgeError.Inline(true).Render("●")
 }
 
 //------------------------------------------------------------------------------
@@ -576,44 +588,62 @@ func HealthTick() tea.Cmd { return healthTick() }
 func probeHealth(ctx context.Context, c *reckon.Client, storeID string) cluster.StoreHealth {
 	h := cluster.StoreHealth{LastProbed: time.Now()}
 	hc := gatewayv1.NewHealthServiceClient(c.Conn())
+	h = probeConsistency(ctx, hc, storeID, h)
+	return probeRaftLog(ctx, hc, storeID, h)
+}
 
-	if resp, err := hc.VerifyClusterConsistency(ctx,
-		&gatewayv1.ClusterCheckRequest{StoreId: storeID}); err == nil {
-		details := resp.GetDetails()
-		h.Status = details["status"]
-		h.OK = h.Status == "healthy"
-		if leader := details["leader"]; leader != "" {
-			h.Leader = cluster.ParseLeader(leader)
-		}
-		if quorum := details["quorum"]; quorum != "" {
-			h.NodesUp = int(extractField(quorum, "available_nodes"))
-			h.NodesTotal = int(extractField(quorum, "total_nodes"))
-			h.HasQuorum = strings.Contains(quorum, "has_quorum => true")
-		}
-		if membership := details["membership"]; membership != "" {
-			h.FailedNodes = parseFailedNodesList(membership)
-		}
-	} else {
+// probeConsistency asks whether the cluster agrees, and keeps a refusal in
+// LastProbeErr for the raft probe to keep only if it has none of its own.
+func probeConsistency(ctx context.Context, hc gatewayv1.HealthServiceClient,
+	storeID string, h cluster.StoreHealth) cluster.StoreHealth {
+	resp, err := hc.VerifyClusterConsistency(ctx, &gatewayv1.ClusterCheckRequest{StoreId: storeID})
+	if err != nil {
 		h.LastProbeErr = err
+		return h
 	}
-
-	if resp, err := hc.CheckRaftLogConsistency(ctx,
-		&gatewayv1.ClusterCheckRequest{StoreId: storeID}); err == nil {
-		details := resp.GetDetails()
-		if terms := details["terms"]; terms != "" {
-			h.Term = cluster.ParseFirstInt(terms)
-		}
-		if lag := details["max_commit_lag"]; lag != "" {
-			h.MaxCommitLag = cluster.ParseFirstInt(lag)
-		}
-		if h.Leader == "" {
-			h.Leader = cluster.ParseLeader(details["leader"])
-		}
-	} else if h.LastProbeErr == nil {
-		h.LastProbeErr = err
-	}
-
+	applyConsistencyDetails(&h, resp.GetDetails())
 	return h
+}
+
+func applyConsistencyDetails(h *cluster.StoreHealth, details map[string]string) {
+	h.Status = details["status"]
+	h.OK = h.Status == "healthy"
+	if leader := details["leader"]; leader != "" {
+		h.Leader = cluster.ParseLeader(leader)
+	}
+	if quorum := details["quorum"]; quorum != "" {
+		h.NodesUp = int(extractField(quorum, "available_nodes"))
+		h.NodesTotal = int(extractField(quorum, "total_nodes"))
+		h.HasQuorum = strings.Contains(quorum, "has_quorum => true")
+	}
+	if membership := details["membership"]; membership != "" {
+		h.FailedNodes = parseFailedNodesList(membership)
+	}
+}
+
+func probeRaftLog(ctx context.Context, hc gatewayv1.HealthServiceClient,
+	storeID string, h cluster.StoreHealth) cluster.StoreHealth {
+	resp, err := hc.CheckRaftLogConsistency(ctx, &gatewayv1.ClusterCheckRequest{StoreId: storeID})
+	if err != nil {
+		if h.LastProbeErr == nil {
+			h.LastProbeErr = err
+		}
+		return h
+	}
+	applyRaftDetails(&h, resp.GetDetails())
+	return h
+}
+
+func applyRaftDetails(h *cluster.StoreHealth, details map[string]string) {
+	if terms := details["terms"]; terms != "" {
+		h.Term = cluster.ParseFirstInt(terms)
+	}
+	if lag := details["max_commit_lag"]; lag != "" {
+		h.MaxCommitLag = cluster.ParseFirstInt(lag)
+	}
+	if h.Leader == "" {
+		h.Leader = cluster.ParseLeader(details["leader"])
+	}
 }
 
 func extractField(s, key string) int64 {

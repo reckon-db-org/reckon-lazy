@@ -47,6 +47,15 @@ jobs:
       - name: go test
         run: go test ./...
 
+      # THE STRUCTURAL FLOOR (macula-io/macula-codebase-checks#9): deep nesting
+      # and tangled functions fail the build. The caps are spelled out in
+      # .golangci.yml, never taken from a tool default, and there is no baseline.
+      - name: structural lint
+        uses: golangci/golangci-lint-action@v8
+        with:
+          version: v2.15.0
+          args: --timeout 10m
+
       # The module path must match the repository path, or `go install
       # github.com/reckon-db-org/reckon-lazy/...@version` fails with
       # "module declares its path as ...". v0.4.0 shipped with the old
