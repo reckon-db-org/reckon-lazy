@@ -28,7 +28,7 @@ lazyreckon --endpoint beam01.lab:50051
 
 Breadcrumb drill-down, `k9s`-style. The top bar shows the navigation path (`reckon ▸ store ▸ mode ▸ …`); the body shows a slim sibling rail plus a wide child preview, and the leaf (event payload, snapshot data, subscription detail) collapses to a full-width pane so the JSON gets the room it needs. Header carries the active store and live cluster health.
 
-```
+```text
 ┌─ ◉ lazyreckon  · store default_store  · ● 4/4 lead .12 ──┐
 │ reckon ▸ default_store ▸ streams ▸ orders-018f6a…        │
 │┌ streams ───────────┐┌ orders-018f6a…  events ──────────┐│
@@ -91,7 +91,7 @@ Defined in [`internal/theme`](internal/theme/theme.go).
 
 ## Layout (source)
 
-```
+```text
 internal/
   theme/      lipgloss palette + named styles
   ui/         header, breadcrumb, status bar (chrome)
