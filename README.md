@@ -113,6 +113,14 @@ cmd/btrepro/, cmd/viewinspect/
 - [lipgloss](https://github.com/charmbracelet/lipgloss) — styling
 - [reckon-go](https://github.com/reckon-db-org/reckon-go) — gRPC client
 
+## Architecture
+
+The C4 model — what it talks to, and what the binary is made of — is in
+[architecture/README.md](architecture/README.md), with its diagrams in
+[assets/](assets/):
+
+![lazyreckon system context](assets/c4-context.svg)
+
 ## Build
 
 ```bash

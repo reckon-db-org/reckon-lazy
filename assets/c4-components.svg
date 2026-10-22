@@ -1,0 +1,142 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 960" role="img" aria-label="lazyreckon components">
+<title>lazyreckon components</title>
+<style>
+.t-name { font-family: "Atkinson Hyperlegible", "Segoe UI", system-ui, -apple-system, Helvetica, Arial, sans-serif; font-size: 15px; font-weight: 700; }
+.t-desc { font-family: "Atkinson Hyperlegible", "Segoe UI", system-ui, -apple-system, Helvetica, Arial, sans-serif; font-size: 12.5px; }
+.t-rel { font-family: "Atkinson Hyperlegible", "Segoe UI", system-ui, -apple-system, Helvetica, Arial, sans-serif; font-size: 11.5px; paint-order: stroke; stroke-width: 4px; stroke-linejoin: round; }
+.t-code { font-family: "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace; font-size: 13px; font-weight: 600; }
+.t-type { font-family: "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace; font-size: 11.5px; }
+.t-bound { font-family: "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace; font-size: 12px; font-weight: 600; }
+.t-leg { font-family: "Atkinson Hyperlegible", "Segoe UI", system-ui, -apple-system, Helvetica, Arial, sans-serif; font-size: 12px; }
+.edge { fill: none; stroke-width: 1.25; }
+.edge-later { fill: none; stroke-width: 1.25; stroke-dasharray: 5 4; }
+.bg { fill: #FFFFFF; }
+.b-sys { fill: #F5E9CC; stroke: #A56F0A; stroke-width: 2; }
+.b-per { fill: #E3EBF2; stroke: #3B5B7A; stroke-width: 1.25; }
+.b-mac { fill: #E6E4EE; stroke: #5E5A78; stroke-width: 1.25; }
+.b-ext { fill: #ECEFED; stroke: #8A9791; stroke-width: 1.25; }
+.b-cmp { fill: #FFFFFF; stroke: #8A9791; stroke-width: 1.25; }
+.b-later { fill: none; stroke: #8A9791; stroke-width: 1.25; stroke-dasharray: 5 4; }
+.bound { fill: none; stroke: #B3BDB8; stroke-width: 1; }
+.head { fill: #3B5B7A; }
+.t-name, .t-code { fill: #16201D; }
+.t-type, .t-bound, .t-leg { fill: #66736E; }
+.t-desc { fill: #34413C; }
+.t-rel { fill: #66736E; stroke: #FFFFFF; }
+.edge, .edge-later { stroke: #8A9791; }
+.arrowhead { fill: #8A9791; }
+@media (prefers-color-scheme: dark) {
+.bg { fill: #171F1C; }
+.b-sys { fill: #3A2E13; stroke: #E3AA3C; }
+.b-per { fill: #1D2A36; stroke: #8EB4D8; }
+.b-mac { fill: #26243A; stroke: #A9A4C8; }
+.b-ext { fill: #1C2421; stroke: #7D8B85; }
+.b-cmp { fill: #171F1C; stroke: #7D8B85; }
+.b-later { stroke: #7D8B85; }
+.bound { stroke: #4A5752; }
+.head { fill: #8EB4D8; }
+.t-name, .t-code { fill: #E6ECE9; }
+.t-type, .t-bound, .t-leg { fill: #93A09A; }
+.t-desc { fill: #C3CDC8; }
+.t-rel { fill: #93A09A; stroke: #171F1C; }
+.edge, .edge-later { stroke: #7D8B85; }
+.arrowhead { fill: #7D8B85; }
+}
+</style>
+<defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="arrowhead" d="M0 0L10 5L0 10z"/></marker></defs>
+<rect class="bg" x="0" y="0" width="1000" height="960"/>
+<rect class="bound" x="16" y="40" width="968" height="690" rx="12"/>
+<text class="t-bound" x="32" y="62">lazyreckon binary [Container: one Go binary, Bubble Tea and lipgloss]</text>
+<rect class="b-cmp" x="32" y="70" width="624" height="122" rx="10"/>
+<text class="t-code" x="48" y="98">cmd/lazyreckon: the root model</text>
+<text class="t-type" x="48" y="116">[tea.Model, key routing, mode switching]</text>
+<text class="t-desc" x="48" y="140">Resolves the endpoint from --endpoint, --profile or the picker, dials with a 5 s timeout,</text>
+<text class="t-desc" x="48" y="156">then runs the Bubble Tea program. Holds the four modes, the filter and goto command bar,</text>
+<text class="t-desc" x="48" y="172">the breadcrumb, and the 5 s health tick.</text>
+<rect class="b-cmp" x="664" y="70" width="304" height="122" rx="10"/>
+<text class="t-code" x="680" y="98">internal/ui, internal/theme</text>
+<text class="t-type" x="680" y="116">[chrome]</text>
+<text class="t-desc" x="680" y="140">Header, breadcrumb, status bar and</text>
+<text class="t-desc" x="680" y="156">help overlay; the palette and the</text>
+<text class="t-desc" x="680" y="172">◉ glyph every view shares.</text>
+<rect class="b-cmp" x="32" y="228" width="296" height="138" rx="10"/>
+<text class="t-code" x="48" y="256">internal/modes: stores</text>
+<text class="t-type" x="48" y="274">[StoresView, four columns]</text>
+<text class="t-desc" x="48" y="298">The cluster dashboard: nodes and</text>
+<text class="t-desc" x="48" y="314">node detail, stores and store info,</text>
+<text class="t-desc" x="48" y="330">fed by internal/cluster and</text>
+<text class="t-desc" x="48" y="346">refreshed on the health tick.</text>
+<rect class="b-cmp" x="348" y="228" width="296" height="138" rx="10"/>
+<text class="t-code" x="364" y="256">internal/modes: drill views</text>
+<text class="t-type" x="364" y="274">[Streams, Subscriptions, Snapshots]</text>
+<text class="t-desc" x="364" y="298">Streams to events to detail,</text>
+<text class="t-desc" x="364" y="314">subscriptions with live lag, and</text>
+<text class="t-desc" x="364" y="330">snapshot streams to versions to</text>
+<text class="t-desc" x="364" y="346">data, each its own column set.</text>
+<rect class="b-cmp" x="664" y="228" width="304" height="138" rx="10"/>
+<text class="t-code" x="680" y="256">internal/ranger</text>
+<text class="t-type" x="680" y="274">[the layout engine]</text>
+<text class="t-desc" x="680" y="298">Column and Crumber interfaces with</text>
+<text class="t-desc" x="680" y="314">two orchestrators: Ranger for the</text>
+<text class="t-desc" x="680" y="330">fixed grid and Drill for the</text>
+<text class="t-desc" x="680" y="346">breadcrumb hierarchy.</text>
+<rect class="b-cmp" x="32" y="390" width="296" height="138" rx="10"/>
+<text class="t-code" x="48" y="418">internal/cluster</text>
+<text class="t-type" x="48" y="436">[Topology, StoreHealth]</text>
+<text class="t-desc" x="48" y="460">Applies WatchStores events to a</text>
+<text class="t-desc" x="48" y="476">(store, node) map, keeps each</text>
+<text class="t-desc" x="48" y="492">store's health, and parses the</text>
+<text class="t-desc" x="48" y="508">leader, term and failed-node text.</text>
+<rect class="b-cmp" x="348" y="390" width="296" height="138" rx="10"/>
+<text class="t-code" x="364" y="418">internal/splash, internal/profiles</text>
+<text class="t-type" x="364" y="436">[the picker and its file]</text>
+<text class="t-desc" x="364" y="460">A first Bubble Tea program that</text>
+<text class="t-desc" x="364" y="476">lists, adds, renames, deletes and</text>
+<text class="t-desc" x="364" y="492">tests profiles; profiles.toml is</text>
+<text class="t-desc" x="364" y="508">TOML and holds no secrets.</text>
+<rect class="b-cmp" x="664" y="390" width="304" height="138" rx="10"/>
+<text class="t-code" x="680" y="418">internal/editor</text>
+<text class="t-type" x="680" y="436">[the $EDITOR handoff]</text>
+<text class="t-desc" x="680" y="460">Serializes the selected record to</text>
+<text class="t-desc" x="680" y="476">a JSON cache file and runs the</text>
+<text class="t-desc" x="680" y="492">editor through tea.ExecProcess,</text>
+<text class="t-desc" x="680" y="508">then reports DoneMsg.</text>
+<rect class="b-mac" x="32" y="556" width="624" height="106" rx="10"/>
+<text class="t-code" x="48" y="584">reckon-go v0.10.0</text>
+<text class="t-type" x="48" y="602">[Platform: the SDK this binary is built on]</text>
+<text class="t-desc" x="48" y="626">reckon.Client with Stores, Streams, Subscriptions and Snapshots sub-clients over grpc-go,</text>
+<text class="t-desc" x="48" y="642">plus the generated reckon.gateway.v1 stubs the health probes call directly.</text>
+<rect class="b-ext" x="32" y="760" width="304" height="106" rx="10"/>
+<text class="t-name" x="48" y="788">reckon-gateway</text>
+<text class="t-type" x="48" y="806">[External endpoint]</text>
+<text class="t-desc" x="48" y="830">One host:port, TLS by default</text>
+<text class="t-desc" x="48" y="846">with no flag to disable it</text>
+<path class="edge" d="M240 166V228" marker-end="url(#a)"/>
+<text class="t-rel" x="248" y="200">builds every view</text>
+<path class="edge" d="M816 166V228" marker-end="url(#a)"/>
+<text class="t-rel" x="824" y="200">renders through</text>
+<path class="edge" d="M180 356V390" marker-end="url(#a)"/>
+<text class="t-rel" x="188" y="378">reads</text>
+<path class="edge" d="M498 356V390" marker-end="url(#a)"/>
+<text class="t-rel" x="506" y="378">reads, writes</text>
+<path class="edge" d="M816 356V390" marker-end="url(#a)"/>
+<text class="t-rel" x="824" y="378">hands off</text>
+<path class="edge" d="M180 528V556" marker-end="url(#a)"/>
+<text class="t-rel" x="188" y="546">calls</text>
+<path class="edge" d="M498 528V556" marker-end="url(#a)"/>
+<text class="t-rel" x="506" y="546">calls</text>
+<path class="edge" d="M180 694V760" marker-end="url(#a)"/>
+<text class="t-rel" x="188" y="730">grpc-go over TLS</text>
+<rect class="b-sys" x="24" y="890" width="22" height="14" rx="3"/>
+<text class="t-leg" x="54" y="902">In scope</text>
+<rect class="b-per" x="119.2" y="890" width="22" height="14" rx="3"/>
+<text class="t-leg" x="149.2" y="902">Person</text>
+<rect class="b-mac" x="200.60000000000002" y="890" width="22" height="14" rx="3"/>
+<text class="t-leg" x="230.60000000000002" y="902">Platform it runs on</text>
+<rect class="b-ext" x="371.70000000000005" y="890" width="22" height="14" rx="3"/>
+<text class="t-leg" x="401.70000000000005" y="902">External system</text>
+<rect class="b-cmp" x="515.2" y="890" width="22" height="14" rx="3"/>
+<text class="t-leg" x="545.2" y="902">Component</text>
+<rect class="bound" x="617.3000000000001" y="890" width="22" height="14" rx="3"/>
+<text class="t-leg" x="647.3000000000001" y="902">Boundary</text>
+</svg>

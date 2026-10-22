@@ -1,0 +1,104 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 640" role="img" aria-label="lazyreckon system context">
+<title>lazyreckon system context</title>
+<style>
+.t-name { font-family: "Atkinson Hyperlegible", "Segoe UI", system-ui, -apple-system, Helvetica, Arial, sans-serif; font-size: 15px; font-weight: 700; }
+.t-desc { font-family: "Atkinson Hyperlegible", "Segoe UI", system-ui, -apple-system, Helvetica, Arial, sans-serif; font-size: 12.5px; }
+.t-rel { font-family: "Atkinson Hyperlegible", "Segoe UI", system-ui, -apple-system, Helvetica, Arial, sans-serif; font-size: 11.5px; paint-order: stroke; stroke-width: 4px; stroke-linejoin: round; }
+.t-code { font-family: "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace; font-size: 13px; font-weight: 600; }
+.t-type { font-family: "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace; font-size: 11.5px; }
+.t-bound { font-family: "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace; font-size: 12px; font-weight: 600; }
+.t-leg { font-family: "Atkinson Hyperlegible", "Segoe UI", system-ui, -apple-system, Helvetica, Arial, sans-serif; font-size: 12px; }
+.edge { fill: none; stroke-width: 1.25; }
+.edge-later { fill: none; stroke-width: 1.25; stroke-dasharray: 5 4; }
+.bg { fill: #FFFFFF; }
+.b-sys { fill: #F5E9CC; stroke: #A56F0A; stroke-width: 2; }
+.b-per { fill: #E3EBF2; stroke: #3B5B7A; stroke-width: 1.25; }
+.b-mac { fill: #E6E4EE; stroke: #5E5A78; stroke-width: 1.25; }
+.b-ext { fill: #ECEFED; stroke: #8A9791; stroke-width: 1.25; }
+.b-cmp { fill: #FFFFFF; stroke: #8A9791; stroke-width: 1.25; }
+.b-later { fill: none; stroke: #8A9791; stroke-width: 1.25; stroke-dasharray: 5 4; }
+.bound { fill: none; stroke: #B3BDB8; stroke-width: 1; }
+.head { fill: #3B5B7A; }
+.t-name, .t-code { fill: #16201D; }
+.t-type, .t-bound, .t-leg { fill: #66736E; }
+.t-desc { fill: #34413C; }
+.t-rel { fill: #66736E; stroke: #FFFFFF; }
+.edge, .edge-later { stroke: #8A9791; }
+.arrowhead { fill: #8A9791; }
+@media (prefers-color-scheme: dark) {
+.bg { fill: #171F1C; }
+.b-sys { fill: #3A2E13; stroke: #E3AA3C; }
+.b-per { fill: #1D2A36; stroke: #8EB4D8; }
+.b-mac { fill: #26243A; stroke: #A9A4C8; }
+.b-ext { fill: #1C2421; stroke: #7D8B85; }
+.b-cmp { fill: #171F1C; stroke: #7D8B85; }
+.b-later { stroke: #7D8B85; }
+.bound { stroke: #4A5752; }
+.head { fill: #8EB4D8; }
+.t-name, .t-code { fill: #E6ECE9; }
+.t-type, .t-bound, .t-leg { fill: #93A09A; }
+.t-desc { fill: #C3CDC8; }
+.t-rel { fill: #93A09A; stroke: #171F1C; }
+.edge, .edge-later { stroke: #7D8B85; }
+.arrowhead { fill: #7D8B85; }
+}
+</style>
+<defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="arrowhead" d="M0 0L10 5L0 10z"/></marker></defs>
+<rect class="bg" x="0" y="0" width="1000" height="640"/>
+<rect class="b-per" x="375" y="30" width="250" height="122" rx="10"/>
+<circle class="head" cx="401" cy="54" r="9"/>
+<text class="t-name" x="419" y="58">Operator at a terminal</text>
+<text class="t-type" x="419" y="76">[Person]</text>
+<text class="t-desc" x="391" y="100">Inspects stores, cluster health,</text>
+<text class="t-desc" x="391" y="116">streams, subscriptions and</text>
+<text class="t-desc" x="391" y="132">snapshots, the way lazygit browses git</text>
+<rect class="b-ext" x="30" y="210" width="250" height="154" rx="10"/>
+<text class="t-name" x="46" y="238">reckon-gateway</text>
+<text class="t-type" x="46" y="256">[External: gRPC, usually 50051]</text>
+<text class="t-desc" x="46" y="280">The only peer it has. Stores,</text>
+<text class="t-desc" x="46" y="296">Stream, Subscription, Snapshot</text>
+<text class="t-desc" x="46" y="312">and Health services over a</text>
+<text class="t-desc" x="46" y="328">connection it dials with TLS</text>
+<text class="t-desc" x="46" y="344">verified against system roots</text>
+<rect class="b-sys" x="375" y="210" width="250" height="154" rx="10"/>
+<text class="t-name" x="391" y="238">lazyreckon</text>
+<text class="t-type" x="391" y="256">[In scope: a Go TUI binary]</text>
+<text class="t-desc" x="391" y="280">A terminal UI over one gateway</text>
+<text class="t-desc" x="391" y="296">endpoint at a time: a four-pane</text>
+<text class="t-desc" x="391" y="312">cluster dashboard, then drill</text>
+<text class="t-desc" x="391" y="328">paths into streams, subscriptions</text>
+<text class="t-desc" x="391" y="344">and snapshots, with a live health</text>
+<rect class="b-ext" x="720" y="210" width="250" height="138" rx="10"/>
+<text class="t-name" x="736" y="238">Profiles and editor</text>
+<text class="t-type" x="736" y="256">[External: local files]</text>
+<text class="t-desc" x="736" y="280">profiles.toml under the XDG config</text>
+<text class="t-desc" x="736" y="296">directory holds the saved endpoints;</text>
+<text class="t-desc" x="736" y="312">the $EDITOR handoff writes a JSON</text>
+<text class="t-desc" x="736" y="328">copy under the cache directory</text>
+<rect class="b-ext" x="375" y="430" width="250" height="106" rx="10"/>
+<text class="t-name" x="391" y="458">Terminal</text>
+<text class="t-type" x="391" y="476">[External: a TTY]</text>
+<text class="t-desc" x="391" y="500">Keys, a resizable frame, and the</text>
+<text class="t-desc" x="391" y="516">alternate screen the TUI draws on</text>
+<path class="edge" d="M500 157V210" marker-end="url(#a)"/>
+<text class="t-rel" x="508" y="188">browses, drills</text>
+<path class="edge" d="M375 285H280" marker-end="url(#a)"/>
+<text class="t-rel" x="327" y="268" text-anchor="middle">gRPC</text>
+<text class="t-rel" x="327" y="305" text-anchor="middle">over TLS</text>
+<path class="edge" d="M625 285H720" marker-end="url(#a)"/>
+<text class="t-rel" x="672" y="268" text-anchor="middle">reads, writes</text>
+<path class="edge" d="M500 364V430" marker-end="url(#a)"/>
+<text class="t-rel" x="508" y="400">draws, reads keys</text>
+<text class="t-desc" x="30" y="560">It never speaks to a store directly: every fact on screen arrives through the gateway's own services,</text>
+<text class="t-desc" x="30" y="576">so an endpoint that is down is the whole failure surface. TLS is not optional here: no flag turns it off.</text>
+<rect class="b-sys" x="24" y="610" width="22" height="14" rx="3"/>
+<text class="t-leg" x="54" y="622">In scope</text>
+<rect class="b-per" x="119.2" y="610" width="22" height="14" rx="3"/>
+<text class="t-leg" x="149.2" y="622">Person</text>
+<rect class="b-mac" x="200.60000000000002" y="610" width="22" height="14" rx="3"/>
+<text class="t-leg" x="230.60000000000002" y="622">Platform it runs on</text>
+<rect class="b-ext" x="371.70000000000005" y="610" width="22" height="14" rx="3"/>
+<text class="t-leg" x="401.70000000000005" y="622">External system</text>
+<rect class="b-cmp" x="515.2" y="610" width="22" height="14" rx="3"/>
+<text class="t-leg" x="545.2" y="622">Component</text>
+</svg>
